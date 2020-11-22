@@ -24,9 +24,10 @@ class DQNAgent:
                 'gym_halite:halite-v0': models.get_mlp}
 
     def __init__(self, env_name):
-        self._env = gym.make(env_name)
-        self._n_outputs = self._env.action_space.n
-        input_shape = self._env.observation_space.shape
+        self._train_env = gym.make(env_name)
+        self._eval_env = gym.make(env_name)
+        self._n_outputs = self._train_env.action_space.n
+        input_shape = self._train_env.observation_space.shape
         self._model = DQNAgent.NETWORKS[env_name](input_shape, self._n_outputs)
 
         self._best_score = 0
@@ -49,30 +50,28 @@ class DQNAgent:
 
     def _collect_one_step(self, state, epsilon):
         action = epsilon_greedy_policy(self._model, state, epsilon)
-        next_state, reward, done, info = self._env.step(action)
+        next_state, reward, done, info = self._train_env.step(action)
         self._replay_memory.append((state, action, reward, next_state, done))
         return next_state, reward, done, info
 
     def _collect_steps(self, steps, epsilon):
-        obs = self._env.reset()
-        step = 0
-        while step < steps:
+        obs = self._train_env.reset()
+        for _ in range(steps):
             obs, reward, done, info = self._collect_one_step(obs, epsilon)
-            step += 1
             if done:
-                self._env.reset()
+                obs = self._train_env.reset()
 
     def _evaluate_episode(self):
-        obs = self._env.reset()
-        rewards = []
+        obs = self._eval_env.reset()
+        rewards = 0
         while True:
             # by default epsilon=0, so greedy is disabled
             action = epsilon_greedy_policy(self._model, obs)
-            obs, reward, done, info = self._env.step(action)
-            rewards.append(reward)
+            obs, reward, done, info = self._eval_env.step(action)
+            rewards += reward
             if done:
                 break
-        return sum(rewards)
+        return rewards
 
     def _training_step(self):
         experiences = self._sample_experiences(self._batch_size)
@@ -92,38 +91,40 @@ class DQNAgent:
 
     def train(self):
         training_step = 0
-        for episode in range(600):
-            epsilon = max(1 - episode / 500, 0.01)
+        iterations_number = 10000
+        eval_interval = 200
+
+        obs = self._train_env.reset()
+        for iteration in range(iterations_number):
+            epsilon = max(1 - iteration / iterations_number, 0.01)
 
             # sample and train each step
-            obs = self._env.reset()
-            while True:
-                # collecting
-                t0 = time.time()
-                obs, reward, done, info = self._collect_one_step(obs, epsilon)
-                t1 = time.time()
-                # training
-                t2 = time.time()
-                self._training_step()
-                training_step += 1
-                t3 = time.time()
-                if done:
-                    break
+            # collecting
+            t0 = time.time()
+            obs, reward, done, info = self._collect_one_step(obs, epsilon)
+            t1 = time.time()
+            # training
+            t2 = time.time()
+            self._training_step()
+            training_step += 1
+            t3 = time.time()
+            if done:
+                obs = self._train_env.reset()
 
-            episode_rewards = []
-            for episode_number in range(3):
-                episode_rewards.append(self._evaluate_episode())
-            mean_episode_reward = sum(episode_rewards)/episode_number+1
+            if training_step % eval_interval == 0:
+                episode_rewards = 0
+                for episode_number in range(3):
+                    episode_rewards += self._evaluate_episode()
+                mean_episode_reward = episode_rewards / (episode_number + 1)
 
-            if mean_episode_reward > self._best_score:
-                best_weights = self._model.get_weights()
-                self._best_score = mean_episode_reward
-            # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
-            print("\rTraining step: {}, Episode: {}, reward: {}, eps: {:.3f}".format(training_step,
-                                                                                     episode,
-                                                                                     mean_episode_reward,
-                                                                                     epsilon))
-            print(f"Time spend for sampling is {t1-t0}")
-            print(f"Time spend for training is {t3-t2}")
+                if mean_episode_reward > self._best_score:
+                    best_weights = self._model.get_weights()
+                    self._best_score = mean_episode_reward
+                # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
+                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(training_step,
+                                                                            mean_episode_reward,
+                                                                            epsilon))
+                print(f"Time spend for sampling is {t1 - t0}")
+                print(f"Time spend for training is {t3 - t2}")
 
         return self._model.set_weights(best_weights)
