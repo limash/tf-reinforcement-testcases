@@ -14,7 +14,7 @@ def epsilon_greedy_policy(model, state, epsilon=0):
     if np.random.rand() < epsilon:
         return np.random.randint(2)
     else:
-        Q_values = model.predict(state[np.newaxis])
+        Q_values = model(state[np.newaxis])
         return np.argmax(Q_values[0])
 
 
@@ -76,7 +76,7 @@ class DQNAgent:
     def _training_step(self):
         experiences = self._sample_experiences(self._batch_size)
         states, actions, rewards, next_states, dones = experiences
-        next_Q_values = self._model.predict(next_states)
+        next_Q_values = self._model(next_states)
         max_next_Q_values = np.max(next_Q_values, axis=1)
         target_Q_values = (rewards +
                            (1 - dones) * self._discount_rate * max_next_Q_values)
