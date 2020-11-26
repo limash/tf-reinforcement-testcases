@@ -8,8 +8,10 @@ from tf_reinforcement_testcases import deep_q_learning
 
 
 if __name__ == '__main__':
-    env_name = 'CartPole-v1'
-    agent = deep_q_learning.DQNAgent(env_name)
+    cart_pole = 'CartPole-v1'
+    halite = 'gym_halite:halite-v0'
+
+    agent = deep_q_learning.DQNAgent(cart_pole)
 
     # set to logging.WARNING to disable logs or logging.DEBUG to see losses as well
     # logging.getLogger().setLevel(logging.INFO)

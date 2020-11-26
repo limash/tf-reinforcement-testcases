@@ -1,49 +1,18 @@
+from abc import ABC
+
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.layers as layers
 
 
-class ResidualUnit(keras.layers.Layer):
-    def __init__(self, filters, strides=1, activation="relu", **kwargs):
-
-        super().__init__(**kwargs)
-        self.activation = keras.activations.get(activation)
-        self.main_layers = [
-            keras.layers.Conv2D(filters, 3, strides=strides,
-                                padding="same", use_bias=False),
-            keras.layers.BatchNormalization(),
-            self.activation,
-            keras.layers.Conv2D(filters, 3, strides=1,
-                                padding="same", use_bias=False),
-            keras.layers.BatchNormalization()
-        ]
-        self.skip_layers = []
-        if strides > 1:
-            self.skip_layers = [
-                keras.layers.Conv2D(filters, 1, strides=strides,
-                                    padding="same", use_bias=False),
-                keras.layers.BatchNormalization()
-            ]
-
-    def call(self, inputs, **kwargs):
-
-        Z = inputs
-        for layer in self.main_layers:
-            Z = layer(Z)
-        skip_Z = inputs
-        for layer in self.skip_layers:
-            skip_Z = layer(skip_Z)
-        return self.activation(Z + skip_Z)
-
-
-class ProbabilityDistribution(tf.keras.Model):
+class ProbabilityDistribution(tf.keras.Model, ABC):
     def call(self, logits, **kwargs):
         # Sample a random categorical action from the given logits.
         return tf.squeeze(tf.random.categorical(logits, 1), axis=-1)
 
 
-class ActorCriticModel(tf.keras.Model):
+class ActorCriticModel(tf.keras.Model, ABC):
     def __init__(self, num_actions):
         super().__init__('mlp_policy')
         # joint layers
@@ -91,6 +60,39 @@ class ActorCriticModel(tf.keras.Model):
         #   action = tf.random.categorical(logits, 1)
         # Will become clearer later why we don't use it.
         return np.squeeze(action, axis=-1), np.squeeze(value, axis=-1)
+
+
+class ResidualUnit(keras.layers.Layer):
+    def __init__(self, filters, strides=1, activation="relu", **kwargs):
+
+        super().__init__(**kwargs)
+        self.activation = keras.activations.get(activation)
+        self.main_layers = [
+            keras.layers.Conv2D(filters, 3, strides=strides,
+                                padding="same", use_bias=False),
+            keras.layers.BatchNormalization(),
+            self.activation,
+            keras.layers.Conv2D(filters, 3, strides=1,
+                                padding="same", use_bias=False),
+            keras.layers.BatchNormalization()
+        ]
+        self.skip_layers = []
+        if strides > 1:
+            self.skip_layers = [
+                keras.layers.Conv2D(filters, 1, strides=strides,
+                                    padding="same", use_bias=False),
+                keras.layers.BatchNormalization()
+            ]
+
+    def call(self, inputs, **kwargs):
+
+        Z = inputs
+        for layer in self.main_layers:
+            Z = layer(Z)
+        skip_Z = inputs
+        for layer in self.skip_layers:
+            skip_Z = layer(skip_Z)
+        return self.activation(Z + skip_Z)
 
 
 def get_resnet33(inputs):
@@ -175,34 +177,6 @@ def get_halite_actor_keras_model(map_shape, scalar_features_length):
     model = keras.Model(inputs=[input_map, input_scalar], outputs=[output])
     return model
 
-def get_tf_conv_net(image_size, model_name):
-    """
-    A pretrained keras convolutional neural network.
-
-    :param image_size: A size of an input image
-    :param model_name: A model name, 'IncResNet' or 'Xception'
-    :return: A pretraind keras convolutional model object
-    """
-    model = keras.Sequential()
-    models = {
-        'IncResNet': keras.applications.InceptionResNetV2,
-        'Xception': keras.applications.Xception
-    }
-
-    try:
-        pretrained_model = models[model_name](
-            include_top=False,
-            weights='imagenet',
-            input_shape=(image_size[0], image_size[1], 3)
-        )
-    except KeyError as err:
-        print(err, " - wrong model name")
-        return None
-
-    model.add(pretrained_model)
-    model.add(keras.layers.GlobalAveragePooling2D())
-    return model
-
 
 def get_mlp(input_shape, n_outputs):
     model = keras.models.Sequential([
@@ -211,12 +185,3 @@ def get_mlp(input_shape, n_outputs):
         keras.layers.Dense(n_outputs)
     ])
     return model
-
-
-if __name__ == "__main__":
-    from tf_reinforcement_testcases import strategy
-
-    strategy = strategy.define_strategy()
-    with strategy.scope():
-        item = get_tf_conv_net([50, 50], 'IncResNet')
-    print("model is ", type(item))
