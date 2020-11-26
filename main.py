@@ -11,7 +11,7 @@ if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
 
-    agent = deep_q_learning.DQNAgent(cart_pole)
+    agent = deep_q_learning.DQNAgent(halite)
 
     # set to logging.WARNING to disable logs or logging.DEBUG to see losses as well
     # logging.getLogger().setLevel(logging.INFO)
