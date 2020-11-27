@@ -1,26 +1,22 @@
-import logging
+from kaggle_environments import make
 
-import numpy as np
-import matplotlib.pyplot as plt
-import gym
-
-from tf_reinforcement_testcases import deep_q_learning
-
+from tf_reinforcement_testcases import deep_q_learning, misc
 
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
 
     agent = deep_q_learning.DQNAgent(halite)
+    model = agent.train(iterations_number=1000)
 
-    # set to logging.WARNING to disable logs or logging.DEBUG to see losses as well
-    # logging.getLogger().setLevel(logging.INFO)
-    model = agent.train()
-    # print("Finished training! Testing...")
-    # print(f"Total Episode Reward is {agent.test(env)}")
+    board_size = 5
+    starting_halite = 5000
+    env = make('halite',
+               configuration={"size": board_size,
+                              "startingHalite": starting_halite},
+               debug=True)
+    trainer = env.train([None])
+    obs = trainer.reset()
 
-    # plt.style.use('seaborn')
-    # plt.plot(np.arange(0, len(rewards_history), 5), rewards_history[::5])
-    # plt.xlabel('Episode')
-    # plt.ylabel('Total Reward')
-    # plt.show()
+    halite_agent = misc.get_halite_agent(model)
+    actions = halite_agent(obs, env.configuration)

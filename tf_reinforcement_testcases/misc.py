@@ -1,12 +1,53 @@
 import numpy as np
 import tensorflow as tf
 
+import kaggle_environments.envs.halite.helpers as hh
 
-def process_halite_obs(inputs):
-    flat_map = inputs['feature_maps'].flatten()
-    scalar_features = inputs['scalar_features']
-    all_inputs = np.concatenate((flat_map, scalar_features))
-    return all_inputs
+from gym_halite.envs.halite_env import get_scalar_features, get_feature_maps
+
+
+def process_experiences(experiences):
+    observations, actions, rewards, next_observations, dones = experiences
+
+    observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
+                                         *observations)
+    actions = tf.convert_to_tensor(actions, dtype=tf.int32)
+    rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+    next_observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
+                                              *next_observations)
+    dones = tf.convert_to_tensor(dones, dtype=tf.float32)
+    return observations, actions, rewards, next_observations, dones
+
+
+def get_halite_agent(policy):
+    """halite agent """
+    def halite_agent(obs, config):
+        from collections import OrderedDict
+
+        directions = [hh.ShipAction.NORTH,
+                      hh.ShipAction.SOUTH,
+                      hh.ShipAction.WEST,
+                      hh.ShipAction.EAST]
+
+        board = hh.Board(obs, config)
+        me = board.current_player
+
+        skalar_features = get_scalar_features(board)
+        skalar_features = skalar_features[np.newaxis, ...]
+        skalar_features = tf.convert_to_tensor(skalar_features, dtype=tf.float32)
+        feature_maps = get_feature_maps(board)
+        feature_maps = feature_maps[np.newaxis, ...]
+        feature_maps = tf.convert_to_tensor(feature_maps, dtype=tf.float32)
+        obs = OrderedDict({'feature_maps': feature_maps, 'scalar_features': skalar_features})
+
+        Q_values = policy(obs)
+        action_number = np.argmax(Q_values.numpy()[0])
+        try:
+            me.ships[0].next_action = directions[action_number]
+        except IndexError:
+            pass
+        return me.next_actions
+    return halite_agent
 
 
 def get_optimizer(steps_per_epoch, number_of_epochs,

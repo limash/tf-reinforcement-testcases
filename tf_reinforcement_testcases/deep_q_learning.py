@@ -1,4 +1,4 @@
-import time
+# import time
 from collections import deque
 
 import numpy as np
@@ -7,7 +7,7 @@ from tensorflow import keras
 
 import gym
 
-from tf_reinforcement_testcases import models
+from tf_reinforcement_testcases import models, misc
 
 
 class DQNAgent:
@@ -34,8 +34,8 @@ class DQNAgent:
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
-        # print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
-        # print(f"Untrained policy reward is {self._evaluate_episode()}")
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
@@ -43,7 +43,6 @@ class DQNAgent:
         else:
             obs = tf.nest.map_structure(lambda x: x[np.newaxis, :], obs)
             Q_values = self._model(obs)
-            # Q_values = self._model(obs[np.newaxis])
             return np.argmax(Q_values[0])
 
     def _collect_one_step(self, obs, epsilon):
@@ -95,42 +94,31 @@ class DQNAgent:
         grads = tape.gradient(loss, self._model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
-    def train(self):
+    def train(self, iterations_number=10000):
         batch_size = 64
-        best_score = 0
+        # best_score = 0
 
         training_step = 0
-        iterations_number = 10000
         eval_interval = 200
 
         obs = self._train_env.reset()
         for iteration in range(iterations_number):
-            epsilon = max(1 - iteration / iterations_number, 0.01)
+            # epsilon = max(1 - iteration / iterations_number, 0.33)
+            epsilon = 0.1
             # sample and train each step
             # collecting
-            t0 = time.time()
+            # t0 = time.time()
             obs, reward, done, info = self._collect_one_step(obs, epsilon)
-            t1 = time.time()
+            # t1 = time.time()
 
             experiences = self._sample_experiences(batch_size)
-            observations, actions, rewards, next_observations, dones = experiences
-
-            # observations = tf.convert_to_tensor(observations, dtype=tf.float32)
-            observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
-                                                 *observations)
-            actions = tf.convert_to_tensor(actions, dtype=tf.int32)
-            rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
-            # next_observations = tf.convert_to_tensor(next_observations, dtype=tf.float32)
-            next_observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
-                                                      *next_observations)
-            dones = tf.convert_to_tensor(dones, dtype=tf.float32)
-            experiences = observations, actions, rewards, next_observations, dones
+            experiences = misc.process_experiences(experiences)
 
             # training
-            t2 = time.time()
+            # t2 = time.time()
             self._training_step(self._discount_rate, self._n_outputs, *experiences)
             training_step += 1
-            t3 = time.time()
+            # t3 = time.time()
             if done:
                 obs = self._train_env.reset()
 
@@ -140,14 +128,15 @@ class DQNAgent:
                     episode_rewards += self._evaluate_episode()
                 mean_episode_reward = episode_rewards / (episode_number + 1)
 
-                if mean_episode_reward > best_score:
-                    best_weights = self._model.get_weights()
-                    best_score = mean_episode_reward
+                # if mean_episode_reward > best_score:
+                #     best_weights = self._model.get_weights()
+                #     best_score = mean_episode_reward
                 # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
                 print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(training_step,
                                                                             mean_episode_reward,
                                                                             epsilon))
-                print(f"Time spend for sampling is {t1 - t0}")
-                print(f"Time spend for training is {t3 - t2}")
+                # print(f"Time spend for sampling is {t1 - t0}")
+                # print(f"Time spend for training is {t3 - t2}")
 
-        return self._model.set_weights(best_weights)
+        # self._model.set_weights(best_weights)
+        return self._model

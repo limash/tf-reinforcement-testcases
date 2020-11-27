@@ -196,10 +196,19 @@ def get_halite_q_mlp(input_shape, n_outputs):
     # concatenate inputs
     x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_feature_input])
     # the stem
-    x = keras.layers.Dense(512, activation="relu")(x)
-    x = keras.layers.Dense(512, activation="relu")(x)
-    x = keras.layers.Dense(512, activation="relu")(x)
-    output = keras.layers.Dense(n_outputs, name="output")(x)
+    stem_kernel_initializer = tf.keras.initializers.variance_scaling(
+        scale=2.0, mode='fan_in', distribution='truncated_normal'
+    )
+    output_kernel_initializer = tf.keras.initializers.random_uniform(
+        minval=-0.03, maxval=0.03
+    )
+    output_bias_initializer = tf.keras.initializers.constant(-0.2)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    output = keras.layers.Dense(n_outputs, name="output",
+                                kernel_initializer=output_kernel_initializer,
+                                bias_initializer=output_bias_initializer)(x)
     # the model
     model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
                         outputs=[output])
