@@ -6,7 +6,9 @@ if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
 
-    agent = deep_q_learning.DQNAgent(halite)
+    # agent = deep_q_learning.RegularDQNAgent(halite)
+    # agent = deep_q_learning.FixedQValuesDQNAgent(halite)
+    agent = deep_q_learning.DoubleDQNAgent(halite)
     model = agent.train(iterations_number=1000)
 
     board_size = 5

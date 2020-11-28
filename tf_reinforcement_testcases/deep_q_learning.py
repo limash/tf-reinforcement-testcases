@@ -1,4 +1,5 @@
-# import time
+import time
+import abc
 from collections import deque
 
 import numpy as np
@@ -10,7 +11,7 @@ import gym
 from tf_reinforcement_testcases import models, misc
 
 
-class DQNAgent:
+class DQNAgent(abc.ABC):
     NETWORKS = {'CartPole-v0': models.get_q_mlp,
                 'CartPole-v1': models.get_q_mlp,
                 'gym_halite:halite-v0': models.get_halite_q_mlp}
@@ -26,6 +27,7 @@ class DQNAgent:
             scalar_features_shape = space['scalar_features'].shape
             input_shape = (feature_maps_shape, scalar_features_shape)
         self._model = DQNAgent.NETWORKS[env_name](input_shape, self._n_outputs)
+        self._target_model = None
 
         self._discount_rate = tf.constant(0.95, dtype=tf.float32)
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
@@ -78,6 +80,64 @@ class DQNAgent:
                 break
         return rewards
 
+    @abc.abstractmethod
+    def _training_step(self, discount_rate, n_outputs,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        raise NotImplementedError
+
+    def train(self, iterations_number=10000):
+        batch_size = 64
+        # best_score = 0
+
+        step_counter = 0
+        eval_interval = 200
+
+        obs = self._train_env.reset()
+        for iteration in range(iterations_number):
+            # epsilon = max(1 - iteration / iterations_number, 0.33)
+            epsilon = 0.1
+            # sample and train each step
+            # collecting
+            t0 = time.time()
+            obs, reward, done, info = self._collect_one_step(obs, epsilon)
+            t1 = time.time()
+
+            experiences = self._sample_experiences(batch_size)
+            experiences = misc.process_experiences(experiences)
+
+            # training
+            t2 = time.time()
+            self._training_step(self._discount_rate, self._n_outputs, *experiences)
+            step_counter += 1
+            t3 = time.time()
+            if done:
+                obs = self._train_env.reset()
+
+            if step_counter % eval_interval == 0:
+                if self._target_model and step_counter % 1000 == 0:
+                    self._target_model.set_weights(self._model.get_weights())
+                episode_rewards = 0
+                for episode_number in range(3):
+                    episode_rewards += self._evaluate_episode()
+                mean_episode_reward = episode_rewards / (episode_number + 1)
+
+                # if mean_episode_reward > best_score:
+                #     best_weights = self._model.get_weights()
+                #     best_score = mean_episode_reward
+                # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
+                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
+                                                                            mean_episode_reward,
+                                                                            epsilon))
+                print(f"Time spend for sampling is {t1 - t0}")
+                print(f"Time spend for training is {t3 - t2}")
+
+        # self._model.set_weights(best_weights)
+        return self._model
+
+
+class RegularDQNAgent(DQNAgent):
+
     @tf.function
     def _training_step(self, discount_rate, n_outputs,
                        observations, actions, rewards, next_observations, dones,
@@ -94,49 +154,55 @@ class DQNAgent:
         grads = tape.gradient(loss, self._model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
-    def train(self, iterations_number=10000):
-        batch_size = 64
-        # best_score = 0
 
-        training_step = 0
-        eval_interval = 200
+class FixedQValuesDQNAgent(DQNAgent):
 
-        obs = self._train_env.reset()
-        for iteration in range(iterations_number):
-            # epsilon = max(1 - iteration / iterations_number, 0.33)
-            epsilon = 0.1
-            # sample and train each step
-            # collecting
-            # t0 = time.time()
-            obs, reward, done, info = self._collect_one_step(obs, epsilon)
-            # t1 = time.time()
+    def __init__(self, env_name):
+        super().__init__(env_name)
 
-            experiences = self._sample_experiences(batch_size)
-            experiences = misc.process_experiences(experiences)
+        self._target_model = keras.models.clone_model(self._model)
+        self._target_model.set_weights(self._model.get_weights())
 
-            # training
-            # t2 = time.time()
-            self._training_step(self._discount_rate, self._n_outputs, *experiences)
-            training_step += 1
-            # t3 = time.time()
-            if done:
-                obs = self._train_env.reset()
+    @tf.function
+    def _training_step(self, discount_rate, n_outputs,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        next_Q_values = self._target_model(next_observations)  # below everything is similar to the regular DQN
+        max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * max_next_Q_values)
+        target_Q_values = tf.expand_dims(target_Q_values, -1)
+        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            all_Q_values = self._model(observations)
+            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+            loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
+        grads = tape.gradient(loss, self._model.trainable_variables)
+        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
-            if training_step % eval_interval == 0:
-                episode_rewards = 0
-                for episode_number in range(3):
-                    episode_rewards += self._evaluate_episode()
-                mean_episode_reward = episode_rewards / (episode_number + 1)
 
-                # if mean_episode_reward > best_score:
-                #     best_weights = self._model.get_weights()
-                #     best_score = mean_episode_reward
-                # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
-                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(training_step,
-                                                                            mean_episode_reward,
-                                                                            epsilon))
-                # print(f"Time spend for sampling is {t1 - t0}")
-                # print(f"Time spend for training is {t3 - t2}")
+class DoubleDQNAgent(DQNAgent):
 
-        # self._model.set_weights(best_weights)
-        return self._model
+    def __init__(self, env_name):
+        super().__init__(env_name)
+
+        self._target_model = keras.models.clone_model(self._model)
+        self._target_model.set_weights(self._model.get_weights())
+
+    @tf.function
+    def _training_step(self, discount_rate, n_outputs,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        next_Q_values = self._model(next_observations)
+        best_next_actions = tf.argmax(next_Q_values, axis=1)
+        next_mask = tf.one_hot(best_next_actions, n_outputs, dtype=tf.float32)
+        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask),
+                                           axis=1, keepdims=True)
+        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * next_best_Q_values)
+        target_Q_values = tf.expand_dims(target_Q_values, -1)
+        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            all_Q_values = self._model(observations)
+            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+            loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
+        grads = tape.gradient(loss, self._model.trainable_variables)
+        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
