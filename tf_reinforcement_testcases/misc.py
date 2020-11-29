@@ -138,8 +138,3 @@ def draw_learning_rate(epochs):
     plt.plot(rng, y)
     plt.show()
     print("Learning rate schedule: {:.3g} to {:.3g} to {:.3g}".format(y[0], max(y), y[-1]))
-
-
-if __name__ == "__main__":
-    print("It is a module file")
-    draw_learning_rate(100)

@@ -12,32 +12,28 @@ from tf_reinforcement_testcases import models, misc
 
 
 class DQNAgent(abc.ABC):
-    NETWORKS = {'CartPole-v0': models.get_q_mlp,
-                'CartPole-v1': models.get_q_mlp,
-                'gym_halite:halite-v0': models.get_halite_q_mlp}
+    NETWORKS = {'CartPole-v1': models.get_q_mlp,
+                'CartPole-v1_duel': models.get_dueling_q_mlp,
+                'gym_halite:halite-v0': models.get_halite_q_mlp,
+                'gym_halite:halite-v0_duel': models.get_halite_dueling_q_mlp}
 
     def __init__(self, env_name):
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
         self._n_outputs = self._train_env.action_space.n
-        input_shape = self._train_env.observation_space.shape
-        if not input_shape:
+        self._input_shape = self._train_env.observation_space.shape
+        if not self._input_shape:
             space = self._train_env.observation_space
             feature_maps_shape = space['feature_maps'].shape
             scalar_features_shape = space['scalar_features'].shape
-            input_shape = (feature_maps_shape, scalar_features_shape)
-        self._model = DQNAgent.NETWORKS[env_name](input_shape, self._n_outputs)
+            self._input_shape = (feature_maps_shape, scalar_features_shape)
+        self._model = None
         self._target_model = None
 
         self._discount_rate = tf.constant(0.95, dtype=tf.float32)
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
         self._loss_fn = keras.losses.mean_squared_error
         self._replay_memory = deque(maxlen=40000)
-
-        # collect some data with a random policy before training
-        self._collect_steps(steps=4000, epsilon=1)
-        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
-        print(f"Untrained policy reward is {self._evaluate_episode()}")
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
@@ -125,7 +121,6 @@ class DQNAgent(abc.ABC):
                 # if mean_episode_reward > best_score:
                 #     best_weights = self._model.get_weights()
                 #     best_score = mean_episode_reward
-                # print("\rEpisode: {}, reward: {}, eps: {:.3f}".format(episode, mean_episode_reward, epsilon), end="")
                 print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
                                                                             mean_episode_reward,
                                                                             epsilon))
@@ -137,6 +132,16 @@ class DQNAgent(abc.ABC):
 
 
 class RegularDQNAgent(DQNAgent):
+
+    def __init__(self, env_name):
+        super().__init__(env_name)
+
+        self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+
+        # collect some data with a random policy before training
+        self._collect_steps(steps=4000, epsilon=1)
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
 
     @tf.function
     def _training_step(self, discount_rate, n_outputs,
@@ -160,8 +165,14 @@ class FixedQValuesDQNAgent(DQNAgent):
     def __init__(self, env_name):
         super().__init__(env_name)
 
+        self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
+
+        # collect some data with a random policy before training
+        self._collect_steps(steps=4000, epsilon=1)
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
 
     @tf.function
     def _training_step(self, discount_rate, n_outputs,
@@ -185,8 +196,47 @@ class DoubleDQNAgent(DQNAgent):
     def __init__(self, env_name):
         super().__init__(env_name)
 
+        self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
+
+        # collect some data with a random policy before training
+        self._collect_steps(steps=4000, epsilon=1)
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
+
+    @tf.function
+    def _training_step(self, discount_rate, n_outputs,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        next_Q_values = self._model(next_observations)
+        best_next_actions = tf.argmax(next_Q_values, axis=1)
+        next_mask = tf.one_hot(best_next_actions, n_outputs, dtype=tf.float32)
+        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask), axis=1)
+        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * next_best_Q_values)
+        target_Q_values = tf.expand_dims(target_Q_values, -1)
+        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            all_Q_values = self._model(observations)
+            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+            loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
+        grads = tape.gradient(loss, self._model.trainable_variables)
+        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
+
+
+class DoubleDuelingDQNAgent(DQNAgent):
+
+    def __init__(self, env_name):
+        super().__init__(env_name)
+
+        self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
+        self._target_model = keras.models.clone_model(self._model)
+        self._target_model.set_weights(self._model.get_weights())
+
+        # collect some data with a random policy before training
+        self._collect_steps(steps=4000, epsilon=1)
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
 
     @tf.function
     def _training_step(self, discount_rate, n_outputs,

@@ -187,6 +187,18 @@ def get_q_mlp(input_shape, n_outputs):
     return model
 
 
+def get_dueling_q_mlp(input_shape, n_outputs):
+    input_states = layers.Input(shape=input_shape)
+    x = layers.Dense(100, activation="elu")(input_states)
+    # x = layers.Dense(32, activation="elu")(x)
+    state_values = layers.Dense(1)(x)
+    raw_advantages = layers.Dense(n_outputs)(x)
+    advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)
+    Q_values = state_values + advantages
+    model = keras.Model(inputs=[input_states], outputs=[Q_values])
+    return model
+
+
 def get_halite_q_mlp(input_shape, n_outputs):
     feature_maps_shape, scalar_features_shape = input_shape
     # create inputs
