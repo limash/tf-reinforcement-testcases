@@ -6,19 +6,19 @@ if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
 
-    # agent = deep_q_learning.RegularDQNAgent(halite)
-    # agent = deep_q_learning.FixedQValuesDQNAgent(halite)
-    agent = deep_q_learning.DoubleDQNAgent(halite)
-    model = agent.train(iterations_number=1000)
+    # agent = deep_q_learning.RegularDQNAgent(cart_pole)
+    # agent = deep_q_learning.FixedQValuesDQNAgent(cart_pole)
+    agent = deep_q_learning.DoubleDQNAgent(cart_pole)
+    model = agent.train(iterations_number=10000)
 
-    board_size = 5
-    starting_halite = 5000
-    env = make('halite',
-               configuration={"size": board_size,
-                              "startingHalite": starting_halite},
-               debug=True)
-    trainer = env.train([None])
-    obs = trainer.reset()
+    # board_size = 5
+    # starting_halite = 5000
+    # env = make('halite',
+    #            configuration={"size": board_size,
+    #                           "startingHalite": starting_halite},
+    #            debug=True)
+    # trainer = env.train([None])
+    # obs = trainer.reset()
 
-    halite_agent = misc.get_halite_agent(model)
-    actions = halite_agent(obs, env.configuration)
+    # halite_agent = misc.get_halite_agent(model)
+    # actions = halite_agent(obs, env.configuration)

@@ -195,8 +195,7 @@ class DoubleDQNAgent(DQNAgent):
         next_Q_values = self._model(next_observations)
         best_next_actions = tf.argmax(next_Q_values, axis=1)
         next_mask = tf.one_hot(best_next_actions, n_outputs, dtype=tf.float32)
-        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask),
-                                           axis=1, keepdims=True)
+        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask), axis=1)
         target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * next_best_Q_values)
         target_Q_values = tf.expand_dims(target_Q_values, -1)
         mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)

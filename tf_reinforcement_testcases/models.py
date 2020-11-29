@@ -213,3 +213,36 @@ def get_halite_q_mlp(input_shape, n_outputs):
     model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
                         outputs=[output])
     return model
+
+
+def get_halite_dueling_q_mlp(input_shape, n_outputs):
+    feature_maps_shape, scalar_features_shape = input_shape
+    # create inputs
+    feature_maps_input = layers.Input(shape=feature_maps_shape, name="feature_maps")
+    flatten_feature_maps = layers.Flatten()(feature_maps_input)
+    scalar_feature_input = layers.Input(shape=scalar_features_shape, name="scalar_features")
+    # concatenate inputs
+    x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_feature_input])
+    # the stem
+    stem_kernel_initializer = tf.keras.initializers.variance_scaling(
+        scale=2.0, mode='fan_in', distribution='truncated_normal'
+    )
+    output_kernel_initializer = tf.keras.initializers.random_uniform(
+        minval=-0.03, maxval=0.03
+    )
+    output_bias_initializer = tf.keras.initializers.constant(-0.2)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
+    state_values = keras.layers.Dense(1,
+                                      kernel_initializer=output_kernel_initializer,
+                                      bias_initializer=output_bias_initializer)(x)
+    raw_advantages = keras.layers.Dense(n_outputs,
+                                        kernel_initializer=output_kernel_initializer,
+                                        bias_initializer=output_bias_initializer)(x)
+    advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)
+    Q_values = state_values + advantages
+    # the model
+    model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
+                        outputs=[Q_values])
+    return model
