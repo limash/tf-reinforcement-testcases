@@ -8,7 +8,7 @@ from tensorflow import keras
 
 import gym
 
-from tf_reinforcement_testcases import models, misc
+from tf_reinforcement_testcases import models, misc, storage
 
 
 class DQNAgent(abc.ABC):
@@ -33,7 +33,8 @@ class DQNAgent(abc.ABC):
         self._discount_rate = tf.constant(0.95, dtype=tf.float32)
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
         self._loss_fn = keras.losses.mean_squared_error
-        self._replay_memory = deque(maxlen=40000)
+        self._replay_memory = None
+        self._sample_batch_size = 64
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
@@ -56,8 +57,8 @@ class DQNAgent(abc.ABC):
             if done:
                 obs = self._train_env.reset()
 
-    def _sample_experiences(self, batch_size):
-        indices = np.random.randint(len(self._replay_memory), size=batch_size)
+    def _sample_experiences(self):
+        indices = np.random.randint(len(self._replay_memory), size=self._sample_batch_size)
         batch = [self._replay_memory[index] for index in indices]
         observations, actions, rewards, next_observations, dones = [
             np.array([experience[field_index] for experience in batch])
@@ -83,7 +84,6 @@ class DQNAgent(abc.ABC):
         raise NotImplementedError
 
     def train(self, iterations_number=10000):
-        batch_size = 64
         # best_score = 0
 
         step_counter = 0
@@ -99,7 +99,7 @@ class DQNAgent(abc.ABC):
             obs, reward, done, info = self._collect_one_step(obs, epsilon)
             t1 = time.time()
 
-            experiences = self._sample_experiences(batch_size)
+            experiences = self._sample_experiences()
             experiences = misc.process_experiences(experiences)
 
             # training
@@ -137,6 +137,7 @@ class RegularDQNAgent(DQNAgent):
         super().__init__(env_name)
 
         self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+        self._replay_memory = deque(maxlen=40000)
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
@@ -161,6 +162,9 @@ class RegularDQNAgent(DQNAgent):
 
 
 class FixedQValuesDQNAgent(DQNAgent):
+    """
+    The agent uses a target model to establish target Q values
+    """
 
     def __init__(self, env_name):
         super().__init__(env_name)
@@ -168,6 +172,7 @@ class FixedQValuesDQNAgent(DQNAgent):
         self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
+        self._replay_memory = deque(maxlen=40000)
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
@@ -192,6 +197,11 @@ class FixedQValuesDQNAgent(DQNAgent):
 
 
 class DoubleDQNAgent(DQNAgent):
+    """
+    To establish target Q values the agent uses:
+    a model to predict best next actions
+    a target model to predict next best Q values corresponding to the best next actions
+    """
 
     def __init__(self, env_name):
         super().__init__(env_name)
@@ -199,6 +209,7 @@ class DoubleDQNAgent(DQNAgent):
         self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
+        self._replay_memory = deque(maxlen=40000)
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
@@ -225,6 +236,9 @@ class DoubleDQNAgent(DQNAgent):
 
 
 class DoubleDuelingDQNAgent(DQNAgent):
+    """
+    Similar to the Double agent, but uses a 'dueling network'
+    """
 
     def __init__(self, env_name):
         super().__init__(env_name)
@@ -232,11 +246,50 @@ class DoubleDuelingDQNAgent(DQNAgent):
         self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
+        self._replay_memory = deque(maxlen=40000)
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
         print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
         print(f"Untrained policy reward is {self._evaluate_episode()}")
+
+    @tf.function
+    def _training_step(self, discount_rate, n_outputs,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        next_Q_values = self._model(next_observations)
+        best_next_actions = tf.argmax(next_Q_values, axis=1)
+        next_mask = tf.one_hot(best_next_actions, n_outputs, dtype=tf.float32)
+        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask), axis=1)
+        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * next_best_Q_values)
+        target_Q_values = tf.expand_dims(target_Q_values, -1)
+        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            all_Q_values = self._model(observations)
+            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+            loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
+        grads = tape.gradient(loss, self._model.trainable_variables)
+        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
+
+
+class PriorityDoubleDuelingDQNAgent(DQNAgent):
+
+    def __init__(self, env_name):
+        super().__init__(env_name)
+
+        self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
+        self._target_model = keras.models.clone_model(self._model)
+        self._target_model.set_weights(self._model.get_weights())
+        self._replay_memory = storage.Buffer(self._sample_batch_size, self._input_shape)
+
+        # collect some data with a random policy before training
+        self._collect_steps(steps=400, epsilon=1)
+        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        print(f"Untrained policy reward is {self._evaluate_episode()}")
+
+    def _sample_experiences(self):
+        observations, actions, rewards, next_observations, dones = self._replay_memory.sample_batch()
+        return observations, actions, rewards, next_observations, dones
 
     @tf.function
     def _training_step(self, discount_rate, n_outputs,

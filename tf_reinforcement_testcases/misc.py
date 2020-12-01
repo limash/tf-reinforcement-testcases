@@ -9,12 +9,19 @@ from gym_halite.envs.halite_env import get_scalar_features, get_feature_maps
 def process_experiences(experiences):
     observations, actions, rewards, next_observations, dones = experiences
 
-    observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
-                                         *observations)
+    try:
+        observations = tf.nest.map_structure(
+            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), *observations)
+        next_observations = tf.nest.map_structure(
+            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), *next_observations)
+    except ValueError:
+        observations = tf.nest.map_structure(
+            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), observations)
+        next_observations = tf.nest.map_structure(
+            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), next_observations)
+
     actions = tf.convert_to_tensor(actions, dtype=tf.int32)
     rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
-    next_observations = tf.nest.map_structure(lambda *x: tf.convert_to_tensor(x, dtype=tf.float32),
-                                              *next_observations)
     dones = tf.convert_to_tensor(dones, dtype=tf.float32)
     return observations, actions, rewards, next_observations, dones
 
