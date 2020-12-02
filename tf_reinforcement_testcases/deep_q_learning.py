@@ -100,7 +100,10 @@ class DQNAgent(abc.ABC):
             t1 = time.time()
 
             experiences = self._sample_experiences()
-            experiences = misc.process_experiences(experiences)
+            # dm-reverb returns tensors (in `dataset.take()` case)
+            # otherwise convert evrth to tensors before training step
+            if not tf.is_tensor(experiences[-1]):
+                experiences = misc.process_experiences(experiences)
 
             # training
             t2 = time.time()
@@ -308,3 +311,9 @@ class PriorityDoubleDuelingDQNAgent(DQNAgent):
             loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
         grads = tape.gradient(loss, self._model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
+        # calculate errors to update priorities
+        absolute_errors = tf.abs(target_Q_values - Q_values)
+        absolute_errors = absolute_errors + tf.constant([0.01])  # to avoid skipping some exp
+        clipped_errors = tf.minimum(absolute_errors, tf.constant([1.]))  # errors from 0.01 to 1.
+        priorities = tf.pow(clipped_errors, tf.constant([0.6]))  # increase prob of the less prob priorities
+        return priorities
