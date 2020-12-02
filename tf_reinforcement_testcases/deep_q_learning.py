@@ -280,10 +280,10 @@ class PriorityDoubleDuelingDQNAgent(DQNAgent):
         self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
-        self._replay_memory = storage.Buffer(self._sample_batch_size, self._input_shape)
+        self._replay_memory = storage.PriorityBuffer(self._sample_batch_size, self._input_shape)
 
         # collect some data with a random policy before training
-        self._collect_steps(steps=400, epsilon=1)
+        self._collect_steps(steps=4000, epsilon=1)
         print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
         print(f"Untrained policy reward is {self._evaluate_episode()}")
 

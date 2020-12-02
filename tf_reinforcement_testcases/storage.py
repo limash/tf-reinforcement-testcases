@@ -4,7 +4,7 @@ import tensorflow as tf
 import reverb
 
 
-class Buffer:
+class PriorityBuffer:
     def __init__(self, batch_size=64, observations_shape=None):
         self._simple_server = reverb.Server(
             tables=[
@@ -42,9 +42,6 @@ class Buffer:
             shapes=(observations_shape, actions_shape, rewards_shape,
                     observations_shape, dones_shape))
 
-        # Batches the data according to the correct sequence length.
-        # dataset = dataset.batch(self._sequence_length)
-        # Batches sequences together
         self._dataset = dataset.batch(self._batch_size)
         self._iterator = self._dataset.as_numpy_iterator()
 

@@ -16,9 +16,9 @@ def process_experiences(experiences):
             lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), *next_observations)
     except ValueError:
         observations = tf.nest.map_structure(
-            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), observations)
+            lambda x: tf.convert_to_tensor(x, dtype=tf.float32), observations)
         next_observations = tf.nest.map_structure(
-            lambda *x: tf.convert_to_tensor(x, dtype=tf.float32), next_observations)
+            lambda x: tf.convert_to_tensor(x, dtype=tf.float32), next_observations)
 
     actions = tf.convert_to_tensor(actions, dtype=tf.int32)
     rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
