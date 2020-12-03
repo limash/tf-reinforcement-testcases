@@ -20,6 +20,7 @@ class PriorityBuffer:
 
         # Initializes the reverb client on the same port as the server.
         self._client = reverb.Client(f'localhost:{self._simple_server.port}')
+        self._tf_client = reverb.TFClient(f'localhost:{self._simple_server.port}')
         self._batch_size = batch_size
 
         # Sets the sequence length to match the length of the prioritized items
@@ -57,6 +58,8 @@ class PriorityBuffer:
         obs = tf.nest.map_structure(lambda x: np.float32(x), obs)
         next_obs = tf.nest.map_structure(lambda x: np.float32(x), next_obs)
         trajectory = obs, action, reward, next_obs, done
+        # put all new trajectories with priority 1
+        # it differs from the original article "Prioritized Experience Replay"
         self._client.insert(trajectory, {'my_table': 1.})
         # with self._client.writer(max_sequence_length=self._sequence_length) as writer:
         #     writer.append((obs, action, reward, next_obs, done))
@@ -65,5 +68,9 @@ class PriorityBuffer:
     def sample_batch(self):
         for sample in self._dataset.take(1):
             obs, action, reward, next_obs, done = sample.data
+            key, probability, table_size, priority = sample.info
         # sample = next(self._iterator)
-        return obs, action, reward, next_obs, done
+        return (obs, action, reward, next_obs, done), (key, probability, table_size, priority)
+
+    def update_priorities(self, keys, priorities):
+        self._tf_client.update_priorities('my_table', keys, priorities)
