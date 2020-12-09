@@ -8,9 +8,9 @@ if __name__ == '__main__':
 
     # agent = deep_q_learning.RegularDQNAgent(cart_pole)
     # agent = deep_q_learning.FixedQValuesDQNAgent(cart_pole)
-    # agent = deep_q_learning.DoubleDQNAgent(cart_pole)
+    agent = deep_q_learning.DoubleDQNAgent(cart_pole)
     # agent = deep_q_learning.DoubleDuelingDQNAgent(halite)
-    agent = deep_q_learning.PriorityDoubleDuelingDQNAgent(halite)
+    # agent = deep_q_learning.PriorityDoubleDuelingDQNAgent(halite)
     model = agent.train(iterations_number=10000)
 
     # board_size = 5

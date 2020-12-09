@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 import kaggle_environments.envs.halite.helpers as hh
 
@@ -138,10 +140,31 @@ def get_callbacks(patience, replicas_in_sync,
 
 
 def draw_learning_rate(epochs):
-    import matplotlib.pyplot as plt
-
     rng = [i for i in range(epochs)]
     y = [get_lrfn(1)(x) for x in rng]
     plt.plot(rng, y)
     plt.show()
     print("Learning rate schedule: {:.3g} to {:.3g} to {:.3g}".format(y[0], max(y), y[-1]))
+
+
+def plot_2d_array(array, name):
+    fig = plt.figure(1)
+    # make a color map of fixed colors
+    # cmap = mpl.colors.ListedColormap(['blue', 'black', 'red'])
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(  # noqa
+        'my_colormap',
+        ['blue', 'black', 'red'],
+        256
+    )
+    # bounds = [-6, -2, 2, 6]
+    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)  # noqa
+
+    # tell imshow about color map so that only set colors are used
+    # img = plt.imshow(array, interpolation='nearest', cmap=cmap, norm=norm)
+    img = plt.imshow(array, interpolation='nearest', cmap=cmap)
+
+    # make a color bar
+    # plt.colorbar(img, cmap=cmap, norm=norm, boundaries=bounds, ticks=[-5, 0, 5])
+    plt.colorbar(img)
+    # plt.show()
+    fig.savefig("data/"+name+".png")

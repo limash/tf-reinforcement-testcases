@@ -180,7 +180,7 @@ def get_halite_actor_keras_model(map_shape, scalar_features_length):
 
 def get_q_mlp(input_shape, n_outputs):
     model = keras.models.Sequential([
-        keras.layers.Dense(100, activation="relu", input_shape=input_shape),
+        keras.layers.Dense(5, activation="relu", input_shape=input_shape),
         # keras.layers.Dense(128, activation="elu"),
         keras.layers.Dense(n_outputs)
     ])

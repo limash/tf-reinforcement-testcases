@@ -1,5 +1,6 @@
-import time
 import abc
+import time
+import copy
 from collections import deque
 
 import numpy as np
@@ -93,6 +94,9 @@ class DQNAgent(abc.ABC):
         step_counter = 0
         eval_interval = 200
 
+        weights = self._model.get_weights()
+        old_weights = copy.deepcopy(weights)
+
         obs = self._train_env.reset()
         for iteration in range(iterations_number):
             # epsilon = max(1 - iteration / iterations_number, 0.33)
@@ -120,7 +124,17 @@ class DQNAgent(abc.ABC):
 
             if step_counter % eval_interval == 0:
                 if self._target_model and step_counter % 1000 == 0:
-                    self._target_model.set_weights(self._model.get_weights())
+                    weights = self._model.get_weights()
+                    # to vis and show how weights change over time
+                    if step_counter % iterations_number == 0:
+                        indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), weights))
+                        differences = list(map(lambda x, y: x - y, weights, old_weights))
+                        diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
+                        example = "0"
+                        misc.plot_2d_array(weights[0], "zero_lvl-example" + example)
+                        misc.plot_2d_array(weights[2], "frst_lvl-example" + example)
+                    old_weights = copy.deepcopy(weights)
+                    self._target_model.set_weights(weights)
                 episode_rewards = 0
                 for episode_number in range(3):
                     episode_rewards += self._evaluate_episode()
@@ -254,7 +268,7 @@ class DoubleDuelingDQNAgent(DQNAgent):
     def __init__(self, env_name):
         super().__init__(env_name)
 
-        self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
+        self._model = DQNAgent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
         self._replay_memory = deque(maxlen=40000)
@@ -289,7 +303,7 @@ class PriorityDoubleDuelingDQNAgent(DQNAgent):
     def __init__(self, env_name):
         super().__init__(env_name)
 
-        self._model = DQNAgent.NETWORKS[env_name+'_duel'](self._input_shape, self._n_outputs)
+        self._model = DQNAgent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
         self._target_model = keras.models.clone_model(self._model)
         self._target_model.set_weights(self._model.get_weights())
         self._replay_memory = storage.PriorityBuffer(self._sample_batch_size, self._input_shape)
@@ -316,7 +330,7 @@ class PriorityDoubleDuelingDQNAgent(DQNAgent):
         info = tf.nest.map_structure(lambda x: tf.cast(x, dtype=tf.float32), info[1:])
         probs, table_sizes, priors = info
         beta = tf.reduce_min(tf.stack([tf.constant(1.0), beta + beta_increment]))
-        importance_sampling = tf.pow(self._tf_sample_batch_size*probs, -beta)
+        importance_sampling = tf.pow(self._tf_sample_batch_size * probs, -beta)
         max_importance = tf.reduce_max(importance_sampling)
         importance_sampling = importance_sampling / max_importance
         # DDQN part
