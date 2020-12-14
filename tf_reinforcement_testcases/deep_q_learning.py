@@ -46,6 +46,7 @@ class DQNAgent(abc.ABC):
             return np.random.randint(self._n_outputs)
         else:
             obs = tf.nest.map_structure(lambda x: x[np.newaxis, :], obs)
+            obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
             Q_values = self._model(obs)
             return np.argmax(Q_values[0])
 
@@ -129,18 +130,6 @@ class DQNAgent(abc.ABC):
                     episode_rewards += self._evaluate_episode()
                 mean_episode_reward = episode_rewards / (episode_number + 1)
 
-                if self._target_model and step_counter % target_model_update_interval == 0:
-                    weights = self._model.get_weights()
-                    # to vis and show how weights change over time
-                    if step_counter % iterations_number == 0:
-                        indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), weights))
-                        differences = list(map(lambda x, y: x - y, weights, old_weights))
-                        diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
-                        misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(mean_episode_reward))
-                        misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(mean_episode_reward))
-                    old_weights = copy.deepcopy(weights)
-                    self._target_model.set_weights(weights)
-
                 # if mean_episode_reward > best_score:
                 #     best_weights = self._model.get_weights()
                 #     best_score = mean_episode_reward
@@ -149,6 +138,22 @@ class DQNAgent(abc.ABC):
                                                                             epsilon))
                 print(f"Time spend for sampling is {t1 - t0}")
                 print(f"Time spend for training is {t3 - t2}")
+
+                if self._target_model and step_counter % target_model_update_interval == 0:
+                    weights = self._model.get_weights()
+                    # to vis and show how weights change over time
+                    if step_counter % iterations_number == 0:
+                        mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
+                        indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
+                        differences = list(map(lambda x, y: x - y, weights, old_weights))
+                        diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
+                        misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(mean_episode_reward))
+                        misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(mean_episode_reward))
+                        self._model = models.SparseMPL(weights, mask)
+                        episode_reward = self._evaluate_episode()
+                        print(f"Episode reward of a sparse net is {episode_reward}")
+                    old_weights = copy.deepcopy(weights)
+                    self._target_model.set_weights(weights)
 
         # self._model.set_weights(best_weights)
         return self._model

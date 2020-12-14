@@ -258,3 +258,36 @@ def get_halite_dueling_q_mlp(input_shape, n_outputs):
     model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
                         outputs=[Q_values])
     return model
+
+
+class SparseLayer(keras.layers.Layer):
+    def __init__(self, w_init, b_init, mask):
+        super(SparseLayer, self).__init__()
+
+        # w size is (input_dimensions, units)
+        self._w = tf.Variable(initial_value=w_init, trainable=True)
+        self._b = tf.Variable(initial_value=b_init, trainable=True)
+        # mask size is similar to w size
+        self._mask = tf.constant(mask, dtype=tf.float32)
+
+    def call(self, inputs, **kwargs):
+        return tf.matmul(inputs, self._w * self._mask) + self._b
+
+
+class SparseMPL(keras.layers.Layer):
+    def __init__(self, weights, mask):
+        super(SparseMPL, self).__init__()
+
+        number_of_layers = int(len(weights) / 2)
+        self._main_layers = []
+        for i in range(0, number_of_layers):
+            self._main_layers.append(SparseLayer(weights[i * 2], weights[i * 2 + 1], mask[i * 2]))
+            # do not add activation on the last layer
+            if i != number_of_layers - 1:
+                self._main_layers.append(keras.layers.Activation("relu"))
+
+    def call(self, inputs, **kwargs):
+        Z = inputs
+        for layer in self._main_layers:
+            Z = layer(Z)
+        return Z
