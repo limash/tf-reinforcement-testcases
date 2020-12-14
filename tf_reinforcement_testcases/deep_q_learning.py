@@ -93,6 +93,7 @@ class DQNAgent(abc.ABC):
 
         step_counter = 0
         eval_interval = 200
+        target_model_update_interval = 1000
 
         weights = self._model.get_weights()
         old_weights = copy.deepcopy(weights)
@@ -123,22 +124,22 @@ class DQNAgent(abc.ABC):
                 obs = self._train_env.reset()
 
             if step_counter % eval_interval == 0:
-                if self._target_model and step_counter % 1000 == 0:
+                episode_rewards = 0
+                for episode_number in range(3):
+                    episode_rewards += self._evaluate_episode()
+                mean_episode_reward = episode_rewards / (episode_number + 1)
+
+                if self._target_model and step_counter % target_model_update_interval == 0:
                     weights = self._model.get_weights()
                     # to vis and show how weights change over time
                     if step_counter % iterations_number == 0:
                         indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), weights))
                         differences = list(map(lambda x, y: x - y, weights, old_weights))
                         diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
-                        example = "0"
-                        misc.plot_2d_array(weights[0], "zero_lvl-example" + example)
-                        misc.plot_2d_array(weights[2], "frst_lvl-example" + example)
+                        misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(mean_episode_reward))
+                        misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(mean_episode_reward))
                     old_weights = copy.deepcopy(weights)
                     self._target_model.set_weights(weights)
-                episode_rewards = 0
-                for episode_number in range(3):
-                    episode_rewards += self._evaluate_episode()
-                mean_episode_reward = episode_rewards / (episode_number + 1)
 
                 # if mean_episode_reward > best_score:
                 #     best_weights = self._model.get_weights()
