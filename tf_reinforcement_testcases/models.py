@@ -189,8 +189,8 @@ def get_q_mlp(input_shape, n_outputs):
 
 def get_dueling_q_mlp(input_shape, n_outputs):
     input_states = layers.Input(shape=input_shape)
-    x = layers.Dense(100, activation="elu")(input_states)
-    # x = layers.Dense(32, activation="elu")(x)
+    x = layers.Dense(100, activation="relu")(input_states)
+    # x = layers.Dense(32, activation="relu")(x)
     state_values = layers.Dense(1)(x)
     raw_advantages = layers.Dense(n_outputs)(x)
     advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)
@@ -274,9 +274,9 @@ class SparseLayer(keras.layers.Layer):
         return tf.matmul(inputs, self._w * self._mask) + self._b
 
 
-class SparseMPL(keras.layers.Layer):
+class SparseMLP(keras.layers.Layer):
     def __init__(self, weights, mask):
-        super(SparseMPL, self).__init__()
+        super(SparseMLP, self).__init__()
 
         number_of_layers = int(len(weights) / 2)
         self._main_layers = []

@@ -111,7 +111,7 @@ class DQNAgent(abc.ABC):
 
             experiences, info = self._sample_experiences()
             # dm-reverb returns tensors (in `dataset.take()` case)
-            # otherwise convert evrth to tensors before training step
+            # otherwise convert evrth to tensors before a training step
             if not tf.is_tensor(experiences[-1]):
                 experiences = misc.process_experiences(experiences)
 
@@ -149,7 +149,7 @@ class DQNAgent(abc.ABC):
                         diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
                         misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(mean_episode_reward))
                         misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(mean_episode_reward))
-                        self._model = models.SparseMPL(weights, mask)
+                        self._model = models.SparseMLP(weights, mask)
                         episode_reward = self._evaluate_episode()
                         print(f"Episode reward of a sparse net is {episode_reward}")
                     old_weights = copy.deepcopy(weights)
