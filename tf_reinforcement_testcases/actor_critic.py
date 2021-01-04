@@ -9,19 +9,39 @@ import tensorflow.keras.optimizers as optimizers
 from tf_reinforcement_testcases import misc
 
 
-class A2CAgent:
-    def __init__(self, model, is_halite=False, lr=7e-3, gamma=0.99, value_c=0.5, entropy_c=1e-4):
+class ACAgent:
+    def __init__(self, model):
         # `gamma` is the discount factor; coefficients are used for the loss terms.
-        self.gamma = gamma
-        self.value_c = value_c
-        self.entropy_c = entropy_c
-        self.is_halite = is_halite
+        self.gamma = 0.99
+        self.value_c = 0.5
+        self.entropy_c = 1e-4
 
         self.model = model
         self.model.compile(
-            optimizer=optimizers.RMSprop(lr=lr),
+            optimizer=optimizers.RMSprop(lr=7e-3),
             # Define separate losses for policy logits and value estimate.
             loss=[self._logits_loss, self._value_loss])
+
+    def _value_loss(self, returns, value):
+        # Value loss is typically MSE between value estimates and returns.
+        return self.value_c * losses.mean_squared_error(returns, value)
+
+    def _logits_loss(self, actions_and_advantages, logits):
+        # A trick to input actions and advantages through the same API.
+        actions, advantages = tf.split(actions_and_advantages, 2, axis=-1)
+        # Sparse categorical CE loss obj that supports sample_weight arg on `call()`.
+        # `from_logits` argument ensures transformation into normalized probabilities.
+        weighted_sparse_ce = losses.SparseCategoricalCrossentropy(from_logits=True)
+        # Policy loss is defined by policy gradients, weighted by advantages.
+        # Note: we only calculate the loss on the actions we've actually taken.
+        actions = tf.cast(actions, tf.int32)
+        policy_loss = weighted_sparse_ce(actions, logits, sample_weight=advantages)
+        # Entropy loss can be calculated as cross-entropy over itself.
+        probs = tf.nn.softmax(logits)
+        entropy_loss = losses.categorical_crossentropy(probs, probs)
+        # We want to minimize policy and maximize entropy losses.
+        # Here signs are flipped because the optimizer minimizes.
+        return policy_loss - self.entropy_c * entropy_loss
 
     def test(self, env, render=False):
         obs, done, ep_reward = env.reset(), False, 0
@@ -104,24 +124,3 @@ class A2CAgent:
         # Advantages are equal to returns - baseline (value estimates in our case).
         advantages = returns - values
         return returns, advantages
-
-    def _value_loss(self, returns, value):
-        # Value loss is typically MSE between value estimates and returns.
-        return self.value_c * losses.mean_squared_error(returns, value)
-
-    def _logits_loss(self, actions_and_advantages, logits):
-        # A trick to input actions and advantages through the same API.
-        actions, advantages = tf.split(actions_and_advantages, 2, axis=-1)
-        # Sparse categorical CE loss obj that supports sample_weight arg on `call()`.
-        # `from_logits` argument ensures transformation into normalized probabilities.
-        weighted_sparse_ce = losses.SparseCategoricalCrossentropy(from_logits=True)
-        # Policy loss is defined by policy gradients, weighted by advantages.
-        # Note: we only calculate the loss on the actions we've actually taken.
-        actions = tf.cast(actions, tf.int32)
-        policy_loss = weighted_sparse_ce(actions, logits, sample_weight=advantages)
-        # Entropy loss can be calculated as cross-entropy over itself.
-        probs = tf.nn.softmax(logits)
-        entropy_loss = losses.categorical_crossentropy(probs, probs)
-        # We want to minimize policy and maximize entropy losses.
-        # Here signs are flipped because the optimizer minimizes.
-        return policy_loss - self.entropy_c * entropy_loss

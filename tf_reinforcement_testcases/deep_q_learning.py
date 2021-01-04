@@ -1,15 +1,16 @@
 import abc
-import time
-import copy
+# import time
+# import copy
 from collections import deque
 
+import ray
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
 import gym
 
-from tf_reinforcement_testcases import models, misc, storage
+from tf_reinforcement_testcases import models, misc  # , storage
 
 
 class DQNAgent(abc.ABC):
@@ -83,6 +84,12 @@ class DQNAgent(abc.ABC):
                 break
         return rewards
 
+    def _evaluate_episodes(self, num_episodes=3):
+        episode_rewards = 0
+        for _ in range(num_episodes):
+            episode_rewards += self._evaluate_episode()
+        return episode_rewards / num_episodes
+
     @abc.abstractmethod
     def _training_step(self, tf_consts_and_vars, info,
                        observations, actions, rewards, next_observations, dones,
@@ -92,22 +99,26 @@ class DQNAgent(abc.ABC):
     def train(self, iterations_number=10000):
         # best_score = 0
 
+        epsilon = 0.1
         step_counter = 0
         eval_interval = 200
         target_model_update_interval = 1000
 
-        weights = self._model.get_weights()
-        old_weights = copy.deepcopy(weights)
+        weights = None
+        mask = None
+        mean_episode_reward = 0
+
+        # weights = self._model.get_weights()
+        # old_weights = copy.deepcopy(weights)
 
         obs = self._train_env.reset()
         for iteration in range(iterations_number):
             # epsilon = max(1 - iteration / iterations_number, 0.33)
-            epsilon = 0.1
             # sample and train each step
             # collecting
-            t0 = time.time()
+            # t0 = time.time()
             obs, reward, done, info = self._collect_one_step(obs, epsilon)
-            t1 = time.time()
+            # t1 = time.time()
 
             experiences, info = self._sample_experiences()
             # dm-reverb returns tensors (in `dataset.take()` case)
@@ -116,63 +127,68 @@ class DQNAgent(abc.ABC):
                 experiences = misc.process_experiences(experiences)
 
             # training
-            t2 = time.time()
+            # t2 = time.time()
             tf_consts_and_vars = (self._discount_rate, self._n_outputs, self._beta, self._beta_increment)
             self._training_step(tf_consts_and_vars, info, *experiences)
             step_counter += 1
-            t3 = time.time()
+            # t3 = time.time()
             if done:
                 obs = self._train_env.reset()
 
-            if step_counter % eval_interval == 0:
-                episode_rewards = 0
-                for episode_number in range(3):
-                    episode_rewards += self._evaluate_episode()
-                mean_episode_reward = episode_rewards / (episode_number + 1)
+            # if step_counter % eval_interval == 0:
+            #     episode_rewards = 0
+            #     for episode_number in range(3):
+            #         episode_rewards += self._evaluate_episode()
+            #     mean_episode_reward = episode_rewards / (episode_number + 1)
 
-                # if mean_episode_reward > best_score:
-                #     best_weights = self._model.get_weights()
-                #     best_score = mean_episode_reward
-                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
-                                                                            mean_episode_reward,
-                                                                            epsilon))
-                print(f"Time spend for sampling is {t1 - t0}")
-                print(f"Time spend for training is {t3 - t2}")
+            #     if mean_episode_reward > best_score:
+            #         best_weights = self._model.get_weights()
+            #         best_score = mean_episode_reward
+            #     print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
+            #                                                                 mean_episode_reward,
+            #                                                                 epsilon))
+            #     print(f"Time spend for sampling is {t1 - t0}")
+            #     print(f"Time spend for training is {t3 - t2}")
 
-                if self._target_model and step_counter % target_model_update_interval == 0:
-                    weights = self._model.get_weights()
-                    # to vis and show how weights change over time
-                    if step_counter % iterations_number == 0:
-                        mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
-                        indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
-                        differences = list(map(lambda x, y: x - y, weights, old_weights))
-                        diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
-                        misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(mean_episode_reward))
-                        misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(mean_episode_reward))
-                        self._model = models.SparseMLP(weights, mask)
-                        episode_reward = self._evaluate_episode()
-                        print(f"Episode reward of a sparse net is {episode_reward}")
-                    old_weights = copy.deepcopy(weights)
-                    self._target_model.set_weights(weights)
+            # update target model weights
+            if self._target_model and step_counter % target_model_update_interval == 0:
+                weights = self._model.get_weights()
+                self._target_model.set_weights(weights)
+
+            # make a sparse model at the last step
+            if step_counter % iterations_number == 0:
+                weights = self._model.get_weights()
+                mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
+                self._model = models.get_sparse(weights, mask)
+
+                # evaluate a sparse model
+                mean_episode_reward = self._evaluate_episodes()
+                # print(f"Episode reward of a sparse net is {episode_reward}")
+
+                # old_weights = copy.deepcopy(weights)
+                # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
+                # differences = list(map(lambda x, y: x - y, weights, old_weights))
+                # diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
 
         # self._model.set_weights(best_weights)
-        return self._model
+        return weights, mask, mean_episode_reward
 
 
+@ray.remote
 class RegularDQNAgent(DQNAgent):
 
-    def __init__(self, env_name):
+    def __init__(self, env_name, replay_memory=deque(maxlen=40000)):
         super().__init__(env_name)
 
         self._model = DQNAgent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-        self._replay_memory = deque(maxlen=40000)
+        self._replay_memory = replay_memory
 
         # collect some data with a random policy before training
         self._collect_steps(steps=4000, epsilon=1)
-        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
-        print(f"Untrained policy reward is {self._evaluate_episode()}")
+        # print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
+        # print(f"Untrained policy reward is {self._evaluate_episode()}")
 
-    @tf.function
+    # it is prepared for @tf.function, but it is impossible to use with @ray.remote
     def _training_step(self, tf_consts_and_vars, info,
                        observations, actions, rewards, next_observations, dones,
                        ):

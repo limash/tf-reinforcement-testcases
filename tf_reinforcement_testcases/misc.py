@@ -41,13 +41,13 @@ def get_halite_agent(policy):
         board = hh.Board(obs, config)
         me = board.current_player
 
-        skalar_features = get_scalar_features(board)
-        skalar_features = skalar_features[np.newaxis, ...]
-        skalar_features = tf.convert_to_tensor(skalar_features, dtype=tf.float32)
+        scalar_features = get_scalar_features(board)
+        scalar_features = scalar_features[np.newaxis, ...]
+        scalar_features = tf.convert_to_tensor(scalar_features, dtype=tf.float32)
         feature_maps = get_feature_maps(board)
         feature_maps = feature_maps[np.newaxis, ...]
         feature_maps = tf.convert_to_tensor(feature_maps, dtype=tf.float32)
-        obs = OrderedDict({'feature_maps': feature_maps, 'scalar_features': skalar_features})
+        obs = OrderedDict({'feature_maps': feature_maps, 'scalar_features': scalar_features})
 
         Q_values = policy(obs)
         action_number = np.argmax(Q_values.numpy()[0])
@@ -168,3 +168,4 @@ def plot_2d_array(array, name):
     plt.colorbar(img)
     # plt.show()
     fig.savefig("data/"+name+".png")
+    plt.close(fig)
