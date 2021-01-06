@@ -3,7 +3,7 @@ import abc
 # import copy
 from collections import deque
 
-import ray
+# import ray
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -135,20 +135,17 @@ class DQNAgent(abc.ABC):
             if done:
                 obs = self._train_env.reset()
 
-            # if step_counter % eval_interval == 0:
-            #     episode_rewards = 0
-            #     for episode_number in range(3):
-            #         episode_rewards += self._evaluate_episode()
-            #     mean_episode_reward = episode_rewards / (episode_number + 1)
+            if step_counter % eval_interval == 0:
+                mean_episode_reward = self._evaluate_episodes()
 
-            #     if mean_episode_reward > best_score:
-            #         best_weights = self._model.get_weights()
-            #         best_score = mean_episode_reward
-            #     print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
-            #                                                                 mean_episode_reward,
-            #                                                                 epsilon))
-            #     print(f"Time spend for sampling is {t1 - t0}")
-            #     print(f"Time spend for training is {t3 - t2}")
+                # if mean_episode_reward > best_score:
+                #     best_weights = self._model.get_weights()
+                #     best_score = mean_episode_reward
+                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
+                                                                            mean_episode_reward,
+                                                                            epsilon))
+                # print(f"Time spend for sampling is {t1 - t0}")
+                # print(f"Time spend for training is {t3 - t2}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
@@ -163,7 +160,9 @@ class DQNAgent(abc.ABC):
 
                 # evaluate a sparse model
                 mean_episode_reward = self._evaluate_episodes()
-                # print(f"Episode reward of a sparse net is {episode_reward}")
+                # print(f"Episode reward of a sparse net is {mean_episode_reward}")
+                # for debugging a sparse model with a batch input
+                self._training_step(tf_consts_and_vars, info, *experiences)
 
                 # old_weights = copy.deepcopy(weights)
                 # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
@@ -174,7 +173,7 @@ class DQNAgent(abc.ABC):
         return weights, mask, mean_episode_reward
 
 
-@ray.remote
+# @ray.remote
 class RegularDQNAgent(DQNAgent):
 
     def __init__(self, env_name, replay_memory=deque(maxlen=40000)):
