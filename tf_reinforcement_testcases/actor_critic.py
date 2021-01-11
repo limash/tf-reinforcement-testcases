@@ -4,23 +4,27 @@ import numpy as np
 
 import tensorflow as tf
 import tensorflow.keras.losses as losses
-import tensorflow.keras.optimizers as optimizers
 
 from tf_reinforcement_testcases import misc
+from tf_reinforcement_testcases.abstract_agent import Agent
 
 
-class ACAgent:
-    def __init__(self, model):
-        # `gamma` is the discount factor; coefficients are used for the loss terms.
-        self.gamma = 0.99
+class ACAgent(Agent):
+
+    def __init__(self, env_name):
+        super().__init__(env_name)
+
+        # Coefficients for the loss terms
         self.value_c = 0.5
         self.entropy_c = 1e-4
 
-        self.model = model
-        self.model.compile(
-            optimizer=optimizers.RMSprop(lr=7e-3),
-            # Define separate losses for policy logits and value estimate.
-            loss=[self._logits_loss, self._value_loss])
+        self.actor_model = None
+        self.model = None
+
+    def _training_step(self, tf_consts_and_vars, info,
+                       observations, actions, rewards, next_observations, dones,
+                       ):
+        return NotImplementedError
 
     def _value_loss(self, returns, value):
         # Value loss is typically MSE between value estimates and returns.

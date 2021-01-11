@@ -1,12 +1,28 @@
 # move all imports inside functions to use ray.remote multitasking
 
 def get_q_mlp(input_shape, n_outputs):
+    """
+    Return Q values of actions
+    """
     from tensorflow import keras
 
     model = keras.models.Sequential([
         keras.layers.Dense(5, activation="relu", input_shape=input_shape),
-        # keras.layers.Dense(128, activation="elu"),
+        # keras.layers.Dense(128, activation="relu"),
         keras.layers.Dense(n_outputs)
+    ])
+    return model
+
+
+def get_actor_mlp(input_shape, n_outputs):
+    """
+    Return probabilities of actions (n_outputs)
+    """
+    from tensorflow import keras
+
+    model = keras.models.Sequential([
+        keras.layers.Dense(5, activation="relu", input_shape=input_shape),
+        keras.layers.Dense(n_outputs, activation="softmax")
     ])
     return model
 
@@ -172,6 +188,7 @@ def get_sparse(weights_in, mask_in):
     model = SparseMLP(weights_in, mask_in)
     return model
 
+
 # class ResidualUnit(keras.layers.Layer):
 #     def __init__(self, filters, strides=1, activation="relu", **kwargs):
 #
@@ -239,50 +256,3 @@ def get_sparse(weights_in, mask_in):
 #     """
 #     input_map = keras.layers.Input(shape=map_shape, name="map_input")
 #     return input_map, get_resnet33(input_map)
-#
-#
-# def get_halite_critic_keras_model(map_shape, scalar_features_length, actions_length):
-#     """
-#
-#     Args:
-#         map_shape: [x, y, number of features layers]
-#         scalar_features_length: number of scalar features
-#         actions_length: it should be 1
-#
-#     Returns:
-#         keras model which predicts q values - estimated reward
-#     """
-#     input_map, conv_net_output = get_halite_net(map_shape)
-#     input_scalar = keras.layers.Input(shape=scalar_features_length, name="scalar_features_input")
-#     input_actions = keras.layers.Input(shape=actions_length, name="actions_input")
-#
-#     concat = keras.layers.concatenate([conv_net_output, input_scalar, input_actions])
-#     dense1 = keras.layers.Dense(1024, activation="relu")(concat)
-#     dense2 = keras.layers.Dense(1024, activation="relu")(dense1)
-#     output = keras.layers.Dense(1, name="output")(dense2)
-#
-#     model = keras.Model(inputs=[input_map, input_scalar, input_actions], outputs=[output])
-#     return model
-#
-#
-# def get_halite_actor_keras_model(map_shape, scalar_features_length):
-#     """
-#
-#     Args:
-#         map_shape: [x, y, number of features layers]
-#         scalar_features_length: number of scalar features
-#
-#     Returns:
-#         keras model which predicts actions, more precisely,
-#         it should predict parameters for a tanh-squashed MultivariateNormalDiag distribution
-#     """
-#     input_map, conv_net_output = get_halite_net(map_shape)
-#     input_scalar = keras.layers.Input(shape=scalar_features_length, name="scalar_features_input")
-#
-#     concat = keras.layers.concatenate([conv_net_output, input_scalar])
-#     dense1 = keras.layers.Dense(1024, activation="relu")(concat)
-#     dense2 = keras.layers.Dense(1024, activation="relu")(dense1)
-#     output = None  # to add projection
-#
-#     model = keras.Model(inputs=[input_map, input_scalar], outputs=[output])
-#     return model

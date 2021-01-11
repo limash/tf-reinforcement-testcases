@@ -1,5 +1,4 @@
 import ray
-
 from tf_reinforcement_testcases import deep_q_learning, misc
 
 
@@ -21,7 +20,6 @@ def check_halite_agent(model):
 
 def one_call(env_name):
     agent = deep_q_learning.RegularDQNAgent(env_name)
-    # agent = deep_q_learning.RegularDQNAgent(env_name)
     # agent = deep_q_learning.FixedQValuesDQNAgent(env_name)
     # agent = deep_q_learning.DoubleDQNAgent(env_name)
     # agent = deep_q_learning.DoubleDuelingDQNAgent(env_name)
@@ -36,11 +34,21 @@ def multi_call(env_name):
     parallel_calls = 10
     agents = [deep_q_learning.RegularDQNAgent.remote(env_name) for _ in range(parallel_calls)]
     futures = [agent.train.remote(iterations_number=10000) for agent in agents]
-    output = ray.get(futures)
-    for weights, mask, reward in output:
+    outputs = ray.get(futures)
+    for weights, mask, reward in outputs:
         print(f"Reward is {reward}")
         misc.plot_2d_array(weights[0], "zero_lvl_with_reward_" + str(reward))
         misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(reward))
+
+
+@ray.remote(num_gpus=1)
+def use_gpu():
+    """
+    Call to check ids of available GPUs:
+    ray.init()
+    use_gpu.remote()
+    """
+    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
 
 
 if __name__ == '__main__':

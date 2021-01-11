@@ -4,23 +4,41 @@ import tensorflow as tf
 import reverb
 
 
-class PriorityBuffer:
-    def __init__(self, batch_size=64, observations_shape=None):
-        self._simple_server = reverb.Server(
+class UniformBuffer:
+    def __init__(self, item_size=1, batch_size=64, observations_shape=None, size=40000):
+        self._server = reverb.Server(
             tables=[
                 reverb.Table(
-                    name='my_table',
+                    name='uniform_table',
+                    sampler=reverb.selectors.Uniform(),
+                    remover=reverb.selectors.Fifo(),
+                    max_size=int(size),
+                    rate_limiter=reverb.rate_limiters.MinSize(batch_size)),
+            ],
+            # Sets the port to None to make the server pick one automatically.
+            port=None)
+
+        # Initializes the reverb client on the same port as the server.
+        self._tf_client = reverb.TFClient(f'localhost:{self._server.port}')
+
+
+class PriorityBuffer:
+    def __init__(self, batch_size=64, observations_shape=None, size=40000):
+        self._server = reverb.Server(
+            tables=[
+                reverb.Table(
+                    name='priority_table',
                     sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
                     remover=reverb.selectors.Fifo(),
-                    max_size=int(40000),
+                    max_size=int(size),
                     rate_limiter=reverb.rate_limiters.MinSize(2)),
             ],
             # Sets the port to None to make the server pick one automatically.
             port=None)
 
         # Initializes the reverb client on the same port as the server.
-        self._client = reverb.Client(f'localhost:{self._simple_server.port}')
-        self._tf_client = reverb.TFClient(f'localhost:{self._simple_server.port}')
+        self._client = reverb.Client(f'localhost:{self._server.port}')
+        self._tf_client = reverb.TFClient(f'localhost:{self._server.port}')
         self._batch_size = batch_size
 
         # Sets the sequence length to match the length of the prioritized items
@@ -42,8 +60,8 @@ class PriorityBuffer:
         obs_dtypes = tf.nest.map_structure(lambda x: np.float32, observations_shape)
 
         dataset = reverb.ReplayDataset(
-            server_address=f'localhost:{self._simple_server.port}',
-            table='my_table',
+            server_address=f'localhost:{self._server.port}',
+            table='priority_table',
             max_in_flight_samples_per_worker=10,
             dtypes=(obs_dtypes, np.int32, np.float32, obs_dtypes, np.float32),
             shapes=(observations_shape, actions_shape, rewards_shape,
@@ -60,10 +78,10 @@ class PriorityBuffer:
         trajectory = obs, action, reward, next_obs, done
         # put all new trajectories with priority 1
         # it differs from the original article "Prioritized Experience Replay"
-        self._client.insert(trajectory, {'my_table': 1.})
+        self._client.insert(trajectory, {'priority_table': 1.})
         # with self._client.writer(max_sequence_length=self._sequence_length) as writer:
         #     writer.append((obs, action, reward, next_obs, done))
-        #     writer.create_item(table='my_table', num_timesteps=1, priority=1.)
+        #     writer.create_item(table='priority_table', num_timesteps=1, priority=1.)
 
     def sample_batch(self):
         for sample in self._dataset.take(1):
@@ -73,4 +91,4 @@ class PriorityBuffer:
         return (obs, action, reward, next_obs, done), (key, probability, table_size, priority)
 
     def update_priorities(self, keys, priorities):
-        self._tf_client.update_priorities('my_table', keys, priorities)
+        self._tf_client.update_priorities('priority_table', keys, priorities)
