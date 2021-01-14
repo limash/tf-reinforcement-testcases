@@ -1,5 +1,5 @@
 import ray
-from tf_reinforcement_testcases import deep_q_learning, misc
+from tf_reinforcement_testcases import deep_q_learning, storage, misc
 
 
 def check_halite_agent(model):
@@ -19,13 +19,17 @@ def check_halite_agent(model):
 
 
 def one_call(env_name):
-    agent = deep_q_learning.RegularDQNAgent(env_name)
+    batch_size = 10
+    n_steps = 3
+    buffer = storage.UniformBuffer(min_size=batch_size)
+
+    agent = deep_q_learning.RegularDQNAgent(env_name, buffer, n_steps)
     # agent = deep_q_learning.FixedQValuesDQNAgent(env_name)
     # agent = deep_q_learning.DoubleDQNAgent(env_name)
     # agent = deep_q_learning.DoubleDuelingDQNAgent(env_name)
     # agent = deep_q_learning.PriorityDoubleDuelingDQNAgent(env_name)
 
-    weights, mask, reward = agent.train(iterations_number=1000)
+    weights, mask, reward = agent.train(iterations_number=10000)
     print(f"Reward is {reward}")
 
 
@@ -54,4 +58,4 @@ def use_gpu():
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
-    one_call(cart_pole)
+    one_call(halite)

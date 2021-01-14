@@ -4,7 +4,6 @@ import ray
 import tensorflow as tf
 from tensorflow import keras
 
-
 from tf_reinforcement_testcases import storage
 from tf_reinforcement_testcases.abstract_agent import Agent
 
@@ -12,29 +11,27 @@ from tf_reinforcement_testcases.abstract_agent import Agent
 # @ray.remote
 class RegularDQNAgent(Agent):
 
-    def __init__(self, env_name, replay_memory=deque(maxlen=40000)):
-        super().__init__(env_name)
+    def __init__(self, env_name, *args, **kwargs):
+        super().__init__(env_name, *args, **kwargs)
 
         self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-        self._replay_memory = replay_memory
 
-        # collect some data with a random policy before training
-        self._collect_steps(steps=4000, epsilon=1)
-        # print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
-        # print(f"Untrained policy reward is {self._evaluate_episode()}")
+        # collect some data with a random policy (epsilon 1 corresponds to it) before training
+        self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
     # it is prepared for @tf.function, but it is impossible to use with @ray.remote
-    def _training_step(self, tf_consts_and_vars, info,
-                       observations, actions, rewards, next_observations, dones,
-                       ):
-        discount_rate, n_outputs, _, _ = tf_consts_and_vars
-        next_Q_values = self._model(next_observations)
+    def _training_step(self, actions, observations, rewards, dones, info):
+
+        total_rewards, first_observations, last_observations, last_dones, last_discounted_gamma, second_actions = \
+            self._prepare_td_arguments(actions, observations, rewards, dones)
+
+        next_Q_values = self._model(last_observations)
         max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
-        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * max_next_Q_values)
+        target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)
-        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
+        mask = tf.one_hot(second_actions, self._n_outputs, dtype=tf.float32)
         with tf.GradientTape() as tape:
-            all_Q_values = self._model(observations)
+            all_Q_values = self._model(first_observations)
             Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
             loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
         grads = tape.gradient(loss, self._model.trainable_variables)
