@@ -1,11 +1,32 @@
+import os
+import sys
+from contextlib import contextmanager
+
 import numpy as np
 import tensorflow as tf
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import kaggle_environments.envs.halite.helpers as hh
-
 from gym_halite.envs.halite_env import get_scalar_features, get_feature_maps
+
+
+@contextmanager
+def nullify_output(suppress_stdout=True, suppress_stderr=True):
+    stdout = sys.stdout
+    stderr = sys.stderr
+    devnull = open(os.devnull, "w")
+    try:
+        if suppress_stdout:
+            sys.stdout = devnull
+        if suppress_stderr:
+            sys.stderr = devnull
+        yield
+    finally:
+        if suppress_stdout:
+            sys.stdout = stdout
+        if suppress_stderr:
+            sys.stderr = stderr
 
 
 def process_experiences(experiences):

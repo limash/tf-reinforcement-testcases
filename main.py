@@ -1,4 +1,7 @@
-import ray
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# import ray
 from tf_reinforcement_testcases import deep_q_learning, storage, misc
 
 
@@ -19,7 +22,7 @@ def check_halite_agent(model):
 
 
 def one_call(env_name):
-    batch_size = 10
+    batch_size = 64
     n_steps = 3
     buffer = storage.UniformBuffer(min_size=batch_size)
 
@@ -45,7 +48,7 @@ def multi_call(env_name):
         misc.plot_2d_array(weights[2], "frst_lvl_with_reward_" + str(reward))
 
 
-@ray.remote(num_gpus=1)
+# @ray.remote(num_gpus=1)
 def use_gpu():
     """
     Call to check ids of available GPUs:
@@ -58,4 +61,4 @@ def use_gpu():
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
-    one_call(halite)
+    one_call(cart_pole)
