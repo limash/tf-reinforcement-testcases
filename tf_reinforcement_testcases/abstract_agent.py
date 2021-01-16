@@ -10,7 +10,7 @@ from tensorflow import keras
 import gym
 import reverb
 
-from tf_reinforcement_testcases import models
+from tf_reinforcement_testcases import models, storage
 
 
 class Agent(abc.ABC):
@@ -19,7 +19,7 @@ class Agent(abc.ABC):
                 'gym_halite:halite-v0': models.get_halite_q_mlp,
                 'gym_halite:halite-v0_duel': models.get_halite_dueling_q_mlp}
 
-    def __init__(self, env_name, buffer, n_steps):
+    def __init__(self, env_name, buffer_table_name, buffer_server_port, buffer_min_size, n_steps):
         # environments; their hyperparameters
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
@@ -41,23 +41,35 @@ class Agent(abc.ABC):
         self._loss_fn = keras.losses.mean_squared_error
 
         # buffer; hyperparameters for a reward calculation
-        self._buffer = buffer  # an object with a server and a table on a server
-        self._table_name = buffer.table_name
+        self._table_name = buffer_table_name
         # an object with a client, which is used to store data on a server
-        self._replay_memory_client = reverb.Client(f'localhost:{buffer.server_port}')
+        self._replay_memory_client = reverb.Client(f'localhost:{buffer_server_port}')
         # make a batch size equal of a minimal size of a buffer
-        self._sample_batch_size = buffer.min_size
-        self._n_steps = n_steps  # amount of steps stored per item, it should be at least 2;
-        # for details see function _collect_trajectories_from_episode()
-        self._discount_rate = tf.constant(0.95, dtype=tf.float32)
+        self._sample_batch_size = buffer_min_size
+        self._n_steps = n_steps  # 1. amount of steps stored per item, it should be at least 2;
+        # 2. for details see function _collect_trajectories_from_episode()
         # initialize a dataset to be used to sample data from a server
-        self._buffer.initialize_dataset(self._input_shape, self._sample_batch_size, self._n_steps)
+        self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
+                                                   self._input_shape, self._sample_batch_size, self._n_steps)
+        self._discount_rate = tf.constant(0.95, dtype=tf.float32)
         self._items_created = 0
         self._items_sampled = 0
 
         # parameters for prioritized exp replay
         self._beta = None
         self._beta_increment = None
+
+    # @property
+    # def input_shape(self):
+    #     return self._input_shape
+
+    # @property
+    # def sample_batch_size(self):
+    #     return self._sample_batch_size
+
+    # @property
+    # def n_steps(self):
+    #     return self._n_steps
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
@@ -168,7 +180,10 @@ class Agent(abc.ABC):
             # t1 = time.time()
 
             # dm-reverb returns tensors
-            experiences, info = self._buffer.sample_batch()
+            for sample in self._dataset.take(1):
+                action, obs, reward, done = sample.data
+                key, probability, table_size, priority = sample.info
+                experiences, info = (action, obs, reward, done), (key, probability, table_size, priority)
             self._items_sampled += self._sample_batch_size
 
             # training
@@ -201,8 +216,8 @@ class Agent(abc.ABC):
                 self._model = models.get_sparse(weights, mask)
 
                 # evaluate a sparse model
-                # mean_episode_reward = self._evaluate_episodes()
-                # print(f"Episode reward of a sparse net is {mean_episode_reward}")
+                mean_episode_reward = self._evaluate_episodes_greedy()
+                print(f"Episode reward of a sparse net is {mean_episode_reward}")
                 # for debugging a sparse model with a batch input
                 # self._training_step(tf_consts_and_vars, info, *experiences)
 

@@ -1,6 +1,6 @@
 from collections import deque
 
-# import ray
+import ray
 import tensorflow as tf
 from tensorflow import keras
 
@@ -8,7 +8,7 @@ from tf_reinforcement_testcases import storage
 from tf_reinforcement_testcases.abstract_agent import Agent
 
 
-# @ray.remote
+@ray.remote
 class RegularDQNAgent(Agent):
 
     def __init__(self, env_name, *args, **kwargs):
