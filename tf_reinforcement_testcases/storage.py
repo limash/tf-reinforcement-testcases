@@ -39,7 +39,7 @@ class UniformBuffer:
     # Only server.port and a table name are required to make a client and a dataset
     # thus, theoretically a function returning a port number and a table name
     # should be enough, but it does not work;
-    # a server object apparently should be 'alive', above or same lvl of all objects using in
+    # a server object apparently should be 'alive', above or same lvl of all objects using it
     def __init__(self,
                  min_size: int = 64,
                  max_size: int = 40000):

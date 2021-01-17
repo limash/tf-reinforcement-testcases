@@ -130,6 +130,14 @@ def get_sparse(weights_in, mask_in):
         def call(self, inputs, **kwargs):
             return tf.matmul(inputs, self._w * self._mask) + self._b
 
+    class SparseSublayer(keras.layers.Layer):
+        def __init__(self, w_init):
+            super(SparseSublayer, self).__init__()
+            self._w = tf.Variable(initial_value=w_init, trainable=True, dtype=tf.float32)
+
+        def call(self, inputs, **kwargs):
+            return tf.matmul(inputs, self._w)
+
     class SparseLayer(keras.layers.Layer):
         def __init__(self, w_init, b_init, mask):
             super(SparseLayer, self).__init__()
@@ -144,10 +152,11 @@ def get_sparse(weights_in, mask_in):
                 masked_weights = weights[bool_mask[:, i]]
                 # making a column vector, it is necessary for tf matrix multiplication
                 masked_weights_column = masked_weights[..., None]
-                self._w.append(tf.Variable(initial_value=masked_weights_column, trainable=True))
+                # self._w.append(tf.Variable(initial_value=masked_weights_column, trainable=True, dtype=tf.float32))
+                self._w.append(SparseSublayer(masked_weights_column))
                 self._mask.append(tf.constant(bool_mask[:, i], dtype=tf.bool))
 
-            self._b = tf.Variable(initial_value=b_init, trainable=True)
+            self._b = tf.Variable(initial_value=b_init, trainable=True, dtype=tf.float32)
 
         def call(self, inputs, **kwargs):
             neurons = []
@@ -160,12 +169,50 @@ def get_sparse(weights_in, mask_in):
                 reshaped_masked_inputs = tf.reshape(
                     masked_inputs, [inputs.shape[0], tf.reduce_sum(tf.cast(self._mask[i], tf.int32)).numpy()])
                 # matrix multiplication for one neuron
-                neuron = tf.matmul(reshaped_masked_inputs, self._w[i]) + self._b[i]
+                # neuron = tf.matmul(reshaped_masked_inputs, self._w[i]) + self._b[i]
+                neuron = self._w[i](reshaped_masked_inputs) + self._b[i]
                 neurons.append(neuron)
 
             result = tf.stack([*neurons], axis=1)
             result = result[..., 0]  # all except the last dimension
             return result
+
+    # class SparseLayer(keras.layers.Layer):
+    #     def __init__(self, w_init, b_init, mask):
+    #         super(SparseLayer, self).__init__()
+    #         # w size is (input_dimensions, units)
+
+    #         bool_mask = mask.astype(np.bool)
+    #         self._w = []
+    #         self._mask = []
+    #         num_neurons = self._num_neurons = w_init.shape[-1]
+    #         for i in range(num_neurons):
+    #             weights = w_init[:, i]
+    #             masked_weights = weights[bool_mask[:, i]]
+    #             # making a column vector, it is necessary for tf matrix multiplication
+    #             masked_weights_column = masked_weights[..., None]
+    #             self._w.append(tf.Variable(initial_value=masked_weights_column, trainable=True))
+    #             self._mask.append(tf.constant(bool_mask[:, i], dtype=tf.bool))
+
+    #         self._b = tf.Variable(initial_value=b_init, trainable=True)
+
+    #     def call(self, inputs, **kwargs):
+    #         neurons = []
+    #         for i in range(self._num_neurons):
+    #             # reshape mask to (batch_size x inputs_size)
+    #             mask = tf.broadcast_to(self._mask[i], [inputs.shape[0], self._mask[i].shape[0]])
+    #             # mask inputs
+    #             masked_inputs = tf.boolean_mask(inputs, mask)
+    #             # restore dimensions after masking
+    #             reshaped_masked_inputs = tf.reshape(
+    #                 masked_inputs, [inputs.shape[0], tf.reduce_sum(tf.cast(self._mask[i], tf.int32)).numpy()])
+    #             # matrix multiplication for one neuron
+    #             neuron = tf.matmul(reshaped_masked_inputs, self._w[i]) + self._b[i]
+    #             neurons.append(neuron)
+
+    #         result = tf.stack([*neurons], axis=1)
+    #         result = result[..., 0]  # all except the last dimension
+    #         return result
 
     class SparseMLP(keras.Model):
         def __init__(self, weights, mask):

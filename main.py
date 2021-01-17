@@ -35,7 +35,7 @@ def one_call(env_name):
     # agent = deep_q_learning.DoubleDuelingDQNAgent(env_name)
     # agent = deep_q_learning.PriorityDoubleDuelingDQNAgent(env_name)
 
-    weights, mask, reward = agent.train(iterations_number=1000)
+    weights, mask, reward = agent.train(iterations_number=200)
     print("Done")
 
 
@@ -69,4 +69,4 @@ def use_gpu():
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     halite = 'gym_halite:halite-v0'
-    multi_call(cart_pole)
+    one_call(cart_pole)

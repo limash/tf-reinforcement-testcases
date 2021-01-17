@@ -59,25 +59,11 @@ class Agent(abc.ABC):
         self._beta = None
         self._beta_increment = None
 
-    # @property
-    # def input_shape(self):
-    #     return self._input_shape
-
-    # @property
-    # def sample_batch_size(self):
-    #     return self._sample_batch_size
-
-    # @property
-    # def n_steps(self):
-    #     return self._n_steps
-
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
             return np.random.randint(self._n_outputs)
         else:
             obs = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), obs)
-            # obs = tf.nest.map_structure(lambda x: x[np.newaxis, :], obs)
-            # obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
             Q_values = self._model(obs)
             return np.argmax(Q_values[0])
 
@@ -114,19 +100,15 @@ class Agent(abc.ABC):
         start_itemizing = self._n_steps - 2
         with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
             obs = self._train_env.reset()
-            # action, reward, done = np.int32(-1), np.float32(0), np.float32(0)
             action, reward, done = tf.constant(-1), tf.constant(0.), tf.constant(0.)
-            # obs = tf.nest.map_structure(lambda x: np.float32(x), obs)
             obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
             writer.append((action, obs, reward, done))
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
                 obs, reward, done, info = self._train_env.step(action)
-                # action, reward, done = np.int32(action), np.float32(reward), np.float32(done)
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
                 reward = tf.convert_to_tensor(reward, dtype=tf.float32)
                 done = tf.convert_to_tensor(done, dtype=tf.float32)
-                # obs = tf.nest.map_structure(lambda x: np.float32(x), obs)
                 obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
                 writer.append((action, obs, reward, done))
                 if step >= start_itemizing:
@@ -145,9 +127,7 @@ class Agent(abc.ABC):
         discounted_gammas = tf.pow(gammas, exponents)
 
         total_rewards = tf.squeeze(tf.matmul(rewards[:, 1:], discounted_gammas))
-        # first_observations = observations[0][:, 0, :]
         first_observations = tf.nest.map_structure(lambda x: x[:, 0, ...], observations)
-        # last_observations = observations[0][:, -1, :]
         last_observations = tf.nest.map_structure(lambda x: x[:, -1, ...], observations)
         last_dones = dones[:, -1]
         last_discounted_gamma = self._discount_rate ** (self._n_steps - 1)
@@ -219,7 +199,7 @@ class Agent(abc.ABC):
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print(f"Episode reward of a sparse net is {mean_episode_reward}")
                 # for debugging a sparse model with a batch input
-                # self._training_step(tf_consts_and_vars, info, *experiences)
+                self._training_step(*experiences, info=info)
 
                 # old_weights = copy.deepcopy(weights)
                 # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
