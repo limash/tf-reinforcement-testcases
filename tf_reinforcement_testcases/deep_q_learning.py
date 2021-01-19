@@ -14,12 +14,16 @@ class RegularDQNAgent(Agent):
     def __init__(self, env_name, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
-        self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+        if self._data is None:
+            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            # collect some data with a random policy (epsilon 1 corresponds to it) before training
+            self._collect_several_episodes(epsilon=1, n_episodes=10)
+        else:
+            self._model = Agent.NETWORKS[env_name](self._data['weights'], self._data['mask'])
+            # collect date with epsilon greedy policy
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
 
-        # collect some data with a random policy (epsilon 1 corresponds to it) before training
-        self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
-
-    # it is prepared for @tf.function, but it is impossible to use with @ray.remote
+    @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
 
         total_rewards, first_observations, last_observations, last_dones, last_discounted_gamma, second_actions = \

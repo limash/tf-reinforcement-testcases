@@ -4,10 +4,11 @@ def get_q_mlp(input_shape, n_outputs):
     """
     Return Q values of actions
     """
+    import tensorflow as tf
     from tensorflow import keras
 
     model = keras.models.Sequential([
-        keras.layers.Dense(5, activation="relu", input_shape=input_shape),
+        keras.layers.Dense(100, activation="relu", input_shape=input_shape),
         # keras.layers.Dense(128, activation="relu"),
         keras.layers.Dense(n_outputs)
     ])
@@ -146,6 +147,7 @@ def get_sparse(weights_in, mask_in):
             bool_mask = mask.astype(np.bool)
             self._w = []
             self._mask = []
+            self._num_connections = []
             num_neurons = self._num_neurons = w_init.shape[-1]
             for i in range(num_neurons):
                 weights = w_init[:, i]
@@ -155,6 +157,7 @@ def get_sparse(weights_in, mask_in):
                 # self._w.append(tf.Variable(initial_value=masked_weights_column, trainable=True, dtype=tf.float32))
                 self._w.append(SparseSublayer(masked_weights_column))
                 self._mask.append(tf.constant(bool_mask[:, i], dtype=tf.bool))
+                self._num_connections.append(tf.constant(np.sum(mask[:, i]).astype(np.int32), dtype=tf.int32))
 
             self._b = tf.Variable(initial_value=b_init, trainable=True, dtype=tf.float32)
 
@@ -166,8 +169,9 @@ def get_sparse(weights_in, mask_in):
                 # mask inputs
                 masked_inputs = tf.boolean_mask(inputs, mask)
                 # restore dimensions after masking
-                reshaped_masked_inputs = tf.reshape(
-                    masked_inputs, [inputs.shape[0], tf.reduce_sum(tf.cast(self._mask[i], tf.int32)).numpy()])
+                # reshaped_masked_inputs = tf.reshape(
+                #     masked_inputs, [inputs.shape[0], tf.reduce_sum(tf.cast(self._mask[i], tf.int32)).numpy()])
+                reshaped_masked_inputs = tf.reshape(masked_inputs, [inputs.shape[0], self._num_connections[i]])
                 # matrix multiplication for one neuron
                 # neuron = tf.matmul(reshaped_masked_inputs, self._w[i]) + self._b[i]
                 neuron = self._w[i](reshaped_masked_inputs) + self._b[i]
@@ -176,43 +180,6 @@ def get_sparse(weights_in, mask_in):
             result = tf.stack([*neurons], axis=1)
             result = result[..., 0]  # all except the last dimension
             return result
-
-    # class SparseLayer(keras.layers.Layer):
-    #     def __init__(self, w_init, b_init, mask):
-    #         super(SparseLayer, self).__init__()
-    #         # w size is (input_dimensions, units)
-
-    #         bool_mask = mask.astype(np.bool)
-    #         self._w = []
-    #         self._mask = []
-    #         num_neurons = self._num_neurons = w_init.shape[-1]
-    #         for i in range(num_neurons):
-    #             weights = w_init[:, i]
-    #             masked_weights = weights[bool_mask[:, i]]
-    #             # making a column vector, it is necessary for tf matrix multiplication
-    #             masked_weights_column = masked_weights[..., None]
-    #             self._w.append(tf.Variable(initial_value=masked_weights_column, trainable=True))
-    #             self._mask.append(tf.constant(bool_mask[:, i], dtype=tf.bool))
-
-    #         self._b = tf.Variable(initial_value=b_init, trainable=True)
-
-    #     def call(self, inputs, **kwargs):
-    #         neurons = []
-    #         for i in range(self._num_neurons):
-    #             # reshape mask to (batch_size x inputs_size)
-    #             mask = tf.broadcast_to(self._mask[i], [inputs.shape[0], self._mask[i].shape[0]])
-    #             # mask inputs
-    #             masked_inputs = tf.boolean_mask(inputs, mask)
-    #             # restore dimensions after masking
-    #             reshaped_masked_inputs = tf.reshape(
-    #                 masked_inputs, [inputs.shape[0], tf.reduce_sum(tf.cast(self._mask[i], tf.int32)).numpy()])
-    #             # matrix multiplication for one neuron
-    #             neuron = tf.matmul(reshaped_masked_inputs, self._w[i]) + self._b[i]
-    #             neurons.append(neuron)
-
-    #         result = tf.stack([*neurons], axis=1)
-    #         result = result[..., 0]  # all except the last dimension
-    #         return result
 
     class SparseMLP(keras.Model):
         def __init__(self, weights, mask):
@@ -227,12 +194,45 @@ def get_sparse(weights_in, mask_in):
                     self._main_layers.append(keras.layers.Activation("relu"))
 
         def call(self, inputs, **kwargs):
-            Z = inputs
+            if type(inputs) is tuple:
+                Z = inputs[0]
+            else:
+                Z = inputs
+
             for layer in self._main_layers:
                 Z = layer(Z)
             return Z
 
     model = SparseMLP(weights_in, mask_in)
+    return model
+
+
+def get_halite_sparse(weights_in, mask_in):
+    from tensorflow import keras
+    import tensorflow.keras.layers as layers
+
+    class HaliteSparseMLP(keras.Model):
+        def __init__(self, weights_in, mask_in):
+            super(HaliteSparseMLP, self).__init__()
+            self._model = get_sparse(weights_in, mask_in)
+
+        def call(self, inputs, **kwargs):
+            feature_maps, scalar_features = inputs['feature_maps'], inputs['scalar_features']
+            flatten_feature_maps = layers.Flatten()(feature_maps)
+            x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_features])
+            Z = self._model(x)
+            return Z
+
+    # # create inputs
+    # feature_maps_input = layers.Input(shape=feature_maps_shape, name="feature_maps")
+    # flatten_feature_maps = layers.Flatten()(feature_maps_input)
+    # scalar_feature_input = layers.Input(shape=scalar_features_shape, name="scalar_features")
+    # # concatenate inputs
+    # x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_feature_input])
+    # x = get_sparse(weights_in, mask_in)(x)
+    # model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
+    #                     outputs=[x])
+    model = HaliteSparseMLP(weights_in, mask_in)
     return model
 
 

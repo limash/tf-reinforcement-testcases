@@ -19,7 +19,10 @@ class Agent(abc.ABC):
                 'gym_halite:halite-v0': models.get_halite_q_mlp,
                 'gym_halite:halite-v0_duel': models.get_halite_dueling_q_mlp}
 
-    def __init__(self, env_name, buffer_table_name, buffer_server_port, buffer_min_size, n_steps):
+    def __init__(self, env_name,
+                 buffer_table_name, buffer_server_port, buffer_min_size,
+                 n_steps=2,
+                 data=None):
         # environments; their hyperparameters
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
@@ -32,9 +35,17 @@ class Agent(abc.ABC):
             scalar_features_shape = space['scalar_features'].shape
             self._input_shape = (feature_maps_shape, scalar_features_shape)
 
+        # store data with weights, mask, and rewards; redefine a model to use to a sparse one
+        self._data = data
+        if data is not None:
+            self.NETWORKS[env_name] = models.get_sparse
+
         # networks
         self._model = None
         self._target_model = None
+
+        # fraction of random exp sampling
+        self._epsilon = 0.1
 
         # hyperparameters for optimization
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
@@ -59,12 +70,17 @@ class Agent(abc.ABC):
         self._beta = None
         self._beta_increment = None
 
+    @tf.function
+    def _predict(self, observation):
+        return self._model(observation)
+
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:
             return np.random.randint(self._n_outputs)
         else:
             obs = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), obs)
-            Q_values = self._model(obs)
+            # Q_values = self._model(obs)
+            Q_values = self._predict(obs)
             return np.argmax(Q_values[0])
 
     def _evaluate_episode(self, epsilon=0):
@@ -141,7 +157,6 @@ class Agent(abc.ABC):
     def train(self, iterations_number=10000):
         # best_score = 0
 
-        epsilon = 0.1
         step_counter = 0
         eval_interval = 200
         target_model_update_interval = 1000
@@ -156,7 +171,11 @@ class Agent(abc.ABC):
         for iteration in range(iterations_number):
             # collecting
             # t0 = time.time()
-            self._collect_trajectories_from_episode(epsilon)
+            # do not collect new experience if we have not used previous
+            items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
+            # if self._items_created < self._items_sampled:
+            if items_created < self._items_sampled:
+                self._collect_trajectories_from_episode(self._epsilon)
             # t1 = time.time()
 
             # dm-reverb returns tensors
@@ -178,8 +197,9 @@ class Agent(abc.ABC):
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
                                                                             mean_episode_reward,
-                                                                            epsilon))
-                print(f"Created items count: {self._items_created}")
+                                                                            self._epsilon))
+                # print(f"Created items count: {self._items_created}")
+                print(f"Created items count: {items_created}")
                 print(f"Sampled items count: {self._items_sampled}")
             #     print(f"Time spend for sampling is {t1 - t0}")
             #     print(f"Time spend for training is {t3 - t2}")
@@ -194,12 +214,16 @@ class Agent(abc.ABC):
                 weights = self._model.get_weights()
                 mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
                 self._model = models.get_sparse(weights, mask)
+                # self._model = models.get_halite_sparse(weights, mask)
 
                 # evaluate a sparse model
+                # redefine methods to be retraced since we have a new model
+                self._predict = tf.function(self._predict.python_function)
+                # self._training_step = tf.function(self._training_step.python_function)
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print(f"Episode reward of a sparse net is {mean_episode_reward}")
                 # for debugging a sparse model with a batch input
-                self._training_step(*experiences, info=info)
+                # self._training_step(*experiences, info=info)
 
                 # old_weights = copy.deepcopy(weights)
                 # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
