@@ -39,6 +39,10 @@ class Agent(abc.ABC):
         self._data = data
         if data is not None:
             self.NETWORKS[env_name] = models.get_sparse
+            # reinitialize weights to random, to check trainability
+            weights = self._data['weights']
+            random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
+            self._data['weights'] = random_weights
 
         # networks
         self._model = None
@@ -211,24 +215,31 @@ class Agent(abc.ABC):
 
             # make a sparse model at the last step
             if step_counter % iterations_number == 0:
-                weights = self._model.get_weights()
-                mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
-                self._model = models.get_sparse(weights, mask)
-                # self._model = models.get_halite_sparse(weights, mask)
+                # if there is no data available, make a sparse net
+                if self._data is None:
+                    weights = self._model.get_weights()
+                    mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
+                    self._model = models.get_sparse(weights, mask)
+                    # self._model = models.get_halite_sparse(weights, mask)
 
-                # evaluate a sparse model
-                # redefine methods to be retraced since we have a new model
-                self._predict = tf.function(self._predict.python_function)
-                # self._training_step = tf.function(self._training_step.python_function)
-                mean_episode_reward = self._evaluate_episodes_greedy()
-                print(f"Episode reward of a sparse net is {mean_episode_reward}")
-                # for debugging a sparse model with a batch input
-                # self._training_step(*experiences, info=info)
+                    # evaluate a sparse model
+                    # redefine methods to be retraced since we have a new model
+                    self._predict = tf.function(self._predict.python_function)
+                    # self._training_step = tf.function(self._training_step.python_function)
+                    mean_episode_reward = self._evaluate_episodes_greedy()
+                    print(f"Episode reward of a sparse net is {mean_episode_reward}")
+                    # for debugging a sparse model with a batch input
+                    # self._training_step(*experiences, info=info)
 
-                # old_weights = copy.deepcopy(weights)
-                # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
-                # differences = list(map(lambda x, y: x - y, weights, old_weights))
-                # diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
+                    # old_weights = copy.deepcopy(weights)
+                    # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
+                    # differences = list(map(lambda x, y: x - y, weights, old_weights))
+                    # diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
+                # write the old data else
+                else:
+                    weights = self._data['weights']
+                    mask = self._data['mask']
+                    mean_episode_reward = self._data['reward']
 
         # self._model.set_weights(best_weights)
         return weights, mask, mean_episode_reward

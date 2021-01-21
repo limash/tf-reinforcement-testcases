@@ -1,26 +1,10 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # to disable tf messages
 import pickle
 
 import ray
+
 from tf_reinforcement_testcases import deep_q_learning, storage, misc
-
-
-def check_halite_agent(model):
-    from kaggle_environments import make
-
-    board_size = 5
-    starting_halite = 5000
-    env = make('halite',
-               configuration={"size": board_size,
-                              "startingHalite": starting_halite},
-               debug=True)
-    trainer = env.train([None])
-    obs = trainer.reset()
-
-    halite_agent = misc.get_halite_agent(model)
-    return halite_agent(obs, env.configuration)
 
 
 def one_call(env_name, data):
@@ -38,7 +22,7 @@ def one_call(env_name, data):
     # agent = deep_q_learning.DoubleDuelingDQNAgent(env_name)
     # agent = deep_q_learning.PriorityDoubleDuelingDQNAgent(env_name)
 
-    weights, mask, reward = agent.train(iterations_number=200)
+    weights, mask, reward = agent.train(iterations_number=2000)
     data = {
         'weights': weights,
         'mask': mask,
@@ -64,16 +48,6 @@ def multi_call(env_name):
         misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
         misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
     ray.shutdown()
-
-
-# @ray.remote(num_gpus=1)
-def use_gpu():
-    """
-    Call to check ids of available GPUs:
-    ray.init()
-    use_gpu.remote()
-    """
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
 
 
 if __name__ == '__main__':
