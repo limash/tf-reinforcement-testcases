@@ -37,7 +37,7 @@ class Agent(abc.ABC):
 
         # store data with weights, mask, and rewards; redefine a model to use to a sparse one
         self._data = data
-        if data is not None:
+        if data:
             self.NETWORKS[env_name] = models.get_sparse
             # reinitialize weights to random, to check trainability
             weights = self._data['weights']

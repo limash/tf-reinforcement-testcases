@@ -8,7 +8,7 @@ from tf_reinforcement_testcases import storage
 from tf_reinforcement_testcases.abstract_agent import Agent
 
 
-# @ray.remote
+@ray.remote
 class RegularDQNAgent(Agent):
 
     def __init__(self, env_name, *args, **kwargs):
@@ -20,8 +20,10 @@ class RegularDQNAgent(Agent):
             self._collect_several_episodes(epsilon=1, n_episodes=10)
         else:
             self._model = Agent.NETWORKS[env_name](self._data['weights'], self._data['mask'])
+            # collect some data with a random policy (epsilon 1 corresponds to it) before training
+            self._collect_several_episodes(epsilon=1, n_episodes=10)
             # collect date with epsilon greedy policy
-            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+            # self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
 
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
