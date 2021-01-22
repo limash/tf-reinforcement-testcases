@@ -8,22 +8,12 @@ def get_q_mlp(input_shape, n_outputs):
     from tensorflow import keras
 
     model = keras.models.Sequential([
-        keras.layers.Dense(100, activation="relu", input_shape=input_shape),
+        keras.layers.Dense(100, activation="relu",
+                           kernel_initializer=keras.initializers.RandomUniform(minval=-0.03, maxval=0.03),
+                           input_shape=input_shape),
         # keras.layers.Dense(128, activation="relu"),
         keras.layers.Dense(n_outputs)
-    ])
-    return model
-
-
-def get_actor_mlp(input_shape, n_outputs):
-    """
-    Return probabilities of actions (n_outputs)
-    """
-    from tensorflow import keras
-
-    model = keras.models.Sequential([
-        keras.layers.Dense(5, activation="relu", input_shape=input_shape),
-        keras.layers.Dense(n_outputs, activation="softmax")
+        # keras.layers.Dense(n_outputs, activation="softmax")  # to return probabilities
     ])
     return model
 

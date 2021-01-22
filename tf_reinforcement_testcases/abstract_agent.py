@@ -35,14 +35,7 @@ class Agent(abc.ABC):
             scalar_features_shape = space['scalar_features'].shape
             self._input_shape = (feature_maps_shape, scalar_features_shape)
 
-        # store data with weights, mask, and rewards; redefine a model to use to a sparse one
         self._data = data
-        if data:
-            self.NETWORKS[env_name] = models.get_sparse
-            # reinitialize weights to random, to check trainability
-            weights = self._data['weights']
-            random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
-            self._data['weights'] = random_weights
 
         # networks
         self._model = None
@@ -163,7 +156,7 @@ class Agent(abc.ABC):
 
         step_counter = 0
         eval_interval = 200
-        target_model_update_interval = 1000
+        target_model_update_interval = 100
 
         weights = None
         mask = None
@@ -219,15 +212,15 @@ class Agent(abc.ABC):
                 if self._data is None:
                     weights = self._model.get_weights()
                     mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
-                    self._model = models.get_sparse(weights, mask)
+                    # self._model = models.get_sparse(weights, mask)
                     # self._model = models.get_halite_sparse(weights, mask)
 
                     # evaluate a sparse model
                     # redefine methods to be retraced since we have a new model
-                    self._predict = tf.function(self._predict.python_function)
+                    # self._predict = tf.function(self._predict.python_function)
                     # self._training_step = tf.function(self._training_step.python_function)
-                    mean_episode_reward = self._evaluate_episodes_greedy()
-                    print(f"Episode reward of a sparse net is {mean_episode_reward}")
+                    # mean_episode_reward = self._evaluate_episodes_greedy()
+                    # print(f"Episode reward of a sparse net is {mean_episode_reward}")
                     # for debugging a sparse model with a batch input
                     # self._training_step(*experiences, info=info)
 

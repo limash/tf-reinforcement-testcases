@@ -105,5 +105,5 @@ def plot_2d_array(array, name):
     # plt.colorbar(img, cmap=cmap, norm=norm, boundaries=bounds, ticks=[-5, 0, 5])
     plt.colorbar(img)
     # plt.show()
-    fig.savefig("data/"+name+".png")
+    fig.savefig("data/pictures/"+name+".png")
     plt.close(fig)
