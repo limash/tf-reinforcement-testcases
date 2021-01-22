@@ -59,6 +59,7 @@ class Agent(abc.ABC):
         # initialize a dataset to be used to sample data from a server
         self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
                                                    self._input_shape, self._sample_batch_size, self._n_steps)
+        self._iterator = iter(self._dataset)
         self._discount_rate = tf.constant(0.95, dtype=tf.float32)
         self._items_created = 0
         self._items_sampled = 0
@@ -176,10 +177,12 @@ class Agent(abc.ABC):
             # t1 = time.time()
 
             # dm-reverb returns tensors
-            for sample in self._dataset.take(1):
-                action, obs, reward, done = sample.data
-                key, probability, table_size, priority = sample.info
-                experiences, info = (action, obs, reward, done), (key, probability, table_size, priority)
+            # for sample in self._dataset.take(1):
+            sample = next(self._iterator)
+            action, obs, reward, done = sample.data
+            key, probability, table_size, priority = sample.info
+            experiences, info = (action, obs, reward, done), (key, probability, table_size, priority)
+
             self._items_sampled += self._sample_batch_size
 
             # training
