@@ -24,7 +24,7 @@ class Agent(abc.ABC):
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
 
-        # it contains weighs, masks, and a corresponding reward
+        # data contains weighs, masks, and a corresponding reward
         self._data = data
         self._is_sparse = make_sparse
         assert not (not data and make_sparse), "Making a sparse model needs data of weights and mask"
@@ -53,12 +53,7 @@ class Agent(abc.ABC):
                                                    self._input_shape, self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
         self._discount_rate = tf.constant(0.95, dtype=tf.float32)
-        self._items_created = 0
         self._items_sampled = 0
-
-        # parameters for prioritized exp replay
-        self._beta = None
-        self._beta_increment = None
 
     @tf.function
     def _predict(self, observation):
@@ -119,7 +114,6 @@ class Agent(abc.ABC):
                 writer.append((action, obs, reward, done))
                 if step >= start_itemizing:
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
-                    self._items_created += 1
                 if done:
                     break
 
@@ -146,7 +140,6 @@ class Agent(abc.ABC):
 
     def train(self, iterations_number=10000):
 
-        step_counter = 0
         eval_interval = 100
         target_model_update_interval = 100
 
@@ -154,7 +147,7 @@ class Agent(abc.ABC):
         mask = None
         mean_episode_reward = 0
 
-        for iteration in range(iterations_number):
+        for step_counter in range(1, iterations_number+1):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
@@ -166,11 +159,9 @@ class Agent(abc.ABC):
             action, obs, reward, done = sample.data
             key, probability, table_size, priority = sample.info
             experiences, info = (action, obs, reward, done), (key, probability, table_size, priority)
-
             self._items_sampled += self._sample_batch_size
 
             self._training_step(*experiences, info=info)
-            step_counter += 1
 
             if step_counter % eval_interval == 0:
                 mean_episode_reward = self._evaluate_episodes_greedy()

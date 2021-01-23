@@ -11,8 +11,7 @@ from tf_reinforcement_testcases import deep_q_learning, storage, misc
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
           "double": deep_q_learning.DoubleDQNAgent,
-          "double_dueling": deep_q_learning.DoubleDuelingDQNAgent,
-          "priority_dd": deep_q_learning.PriorityDoubleDuelingDQNAgent}
+          "double_dueling": deep_q_learning.DoubleDuelingDQNAgent}
 
 
 def one_call(env_name, agent_object, data, make_sparse):
@@ -81,4 +80,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(cart_pole, AGENTS['double_dueling'], init_data, make_sparse=False)
+    multi_call(cart_pole, AGENTS['regular'], init_data, make_sparse=False)

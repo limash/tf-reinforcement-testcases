@@ -4,13 +4,12 @@ def get_q_mlp(input_shape, n_outputs):
     """
     Return Q values of actions
     """
-    import tensorflow as tf
     from tensorflow import keras
 
     model = keras.models.Sequential([
         keras.layers.Dense(100, activation="relu",
-                           kernel_initializer=keras.initializers.RandomUniform(minval=-0.03, maxval=0.03),
                            input_shape=input_shape),
+        # kernel_initializer = keras.initializers.RandomUniform(minval=-0.03, maxval=0.03),
         # keras.layers.Dense(128, activation="relu"),
         keras.layers.Dense(n_outputs)
         # keras.layers.Dense(n_outputs, activation="softmax")  # to return probabilities
@@ -35,6 +34,8 @@ def get_dueling_q_mlp(input_shape, n_outputs):
 
 
 def get_sparse(weights_in, mask_in):
+    from abc import ABC
+
     import numpy as np
     import tensorflow as tf
     from tensorflow import keras
@@ -89,7 +90,7 @@ def get_sparse(weights_in, mask_in):
             result = result[..., 0]  # all except the last dimension
             return result
 
-    class SparseMLP(keras.Model):
+    class SparseMLP(keras.Model, ABC):
         def __init__(self, weights, mask):
             super(SparseMLP, self).__init__()
 

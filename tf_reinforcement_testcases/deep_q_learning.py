@@ -1,8 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 
-from tf_reinforcement_testcases import models, storage
+from tf_reinforcement_testcases import models
 from tf_reinforcement_testcases.abstract_agent import Agent
 
 
@@ -120,6 +119,7 @@ class DoubleDuelingDQNAgent(DoubleDQNAgent):
 
     def __init__(self, env_name, *args, **kwargs):
         # we need a training_step from a DoubleDQNAgent, but initialization from an abstract Agent
+        # since dueling changes are in the model, so we need initialize this model
         super(RegularDQNAgent, self).__init__(env_name, *args, **kwargs)
 
         assert not (self._data and self._is_sparse), "A sparse model is not available for dueling nets"
@@ -138,63 +138,3 @@ class DoubleDuelingDQNAgent(DoubleDQNAgent):
 
         self._target_model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
         self._target_model.set_weights(self._model.get_weights())
-
-
-class PriorityDoubleDuelingDQNAgent(Agent):
-
-    def __init__(self, env_name):
-        super().__init__(env_name)
-
-        self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
-        self._target_model = keras.models.clone_model(self._model)
-        self._target_model.set_weights(self._model.get_weights())
-        self._replay_memory = storage.PriorityBuffer(self._sample_batch_size, self._input_shape)
-
-        self._tf_sample_batch_size = tf.constant(self._sample_batch_size, dtype=tf.float32)
-        self._beta = tf.Variable(0.4, dtype=tf.float32)
-        self._beta_increment = tf.constant(0.0001, dtype=tf.float32)
-
-        # collect some data with a random policy before training
-        self._collect_steps(steps=4000, epsilon=1)
-        print(f"Random policy reward is {self._evaluate_episode(epsilon=1)}")
-        print(f"Untrained policy reward is {self._evaluate_episode()}")
-
-    def _sample_experiences(self):
-        return self._replay_memory.sample_batch()
-
-    @tf.function
-    def _training_step(self, tf_consts_and_vars, info,
-                       observations, actions, rewards, next_observations, dones,
-                       ):
-        discount_rate, n_outputs, beta, beta_increment = tf_consts_and_vars
-        keys = info[0]
-        # dm-reverb info has a float64 format, which is incompatible
-        info = tf.nest.map_structure(lambda x: tf.cast(x, dtype=tf.float32), info[1:])
-        probs, table_sizes, priors = info
-        beta = tf.reduce_min(tf.stack([tf.constant(1.0), beta + beta_increment]))
-        importance_sampling = tf.pow(self._tf_sample_batch_size * probs, -beta)
-        max_importance = tf.reduce_max(importance_sampling)
-        importance_sampling = importance_sampling / max_importance
-        # DDQN part
-        next_Q_values = self._model(next_observations)
-        best_next_actions = tf.argmax(next_Q_values, axis=1)
-        next_mask = tf.one_hot(best_next_actions, n_outputs, dtype=tf.float32)
-        next_best_Q_values = tf.reduce_sum((self._target_model(next_observations) * next_mask), axis=1)
-        target_Q_values = (rewards + (tf.constant(1.0) - dones) * discount_rate * next_best_Q_values)
-        target_Q_values = tf.expand_dims(target_Q_values, -1)
-        mask = tf.one_hot(actions, n_outputs, dtype=tf.float32)
-        with tf.GradientTape() as tape:
-            all_Q_values = self._model(observations)
-            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
-            # add importance sampling to the loss function
-            loss = tf.reduce_mean(importance_sampling * self._loss_fn(target_Q_values, Q_values))
-        grads = tape.gradient(loss, self._model.trainable_variables)
-        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
-        # calculate new priorities
-        absolute_errors = tf.abs(target_Q_values - Q_values)
-        absolute_errors = absolute_errors + tf.constant([0.01])  # to avoid skipping some exp
-        clipped_errors = tf.minimum(absolute_errors, tf.constant([1.]))  # errors from 0.01 to 1.
-        new_priorities = tf.pow(clipped_errors, tf.constant([0.6]))  # increase prob of the less prob priorities
-        new_priorities = tf.cast(new_priorities, dtype=tf.float64)
-        new_priorities = tf.squeeze(new_priorities, axis=-1)
-        self._replay_memory.update_priorities(keys, new_priorities)
