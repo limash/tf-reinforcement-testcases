@@ -74,7 +74,6 @@ def multi_call(env_name, agent_object, data):
 
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
-    halite = 'gym_halite:halite-v0'
 
     try:
         with open('data/data.pickle', 'rb') as f:

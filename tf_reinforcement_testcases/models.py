@@ -34,92 +34,10 @@ def get_dueling_q_mlp(input_shape, n_outputs):
     return model
 
 
-def get_halite_q_mlp(input_shape, n_outputs):
-    import tensorflow as tf
-    from tensorflow import keras
-    import tensorflow.keras.layers as layers
-
-    feature_maps_shape, scalar_features_shape = input_shape
-    # create inputs
-    feature_maps_input = layers.Input(shape=feature_maps_shape, name="feature_maps")
-    flatten_feature_maps = layers.Flatten()(feature_maps_input)
-    scalar_feature_input = layers.Input(shape=scalar_features_shape, name="scalar_features")
-    # concatenate inputs
-    x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_feature_input])
-    # the stem
-    stem_kernel_initializer = tf.keras.initializers.variance_scaling(
-        scale=2.0, mode='fan_in', distribution='truncated_normal'
-    )
-    output_kernel_initializer = tf.keras.initializers.random_uniform(
-        minval=-0.03, maxval=0.03
-    )
-    output_bias_initializer = tf.keras.initializers.constant(-0.2)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    output = keras.layers.Dense(n_outputs, name="output",
-                                kernel_initializer=output_kernel_initializer,
-                                bias_initializer=output_bias_initializer)(x)
-    # the model
-    model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
-                        outputs=[output])
-    return model
-
-
-def get_halite_dueling_q_mlp(input_shape, n_outputs):
-    import tensorflow as tf
-    from tensorflow import keras
-    import tensorflow.keras.layers as layers
-
-    feature_maps_shape, scalar_features_shape = input_shape
-    # create inputs
-    feature_maps_input = layers.Input(shape=feature_maps_shape, name="feature_maps")
-    flatten_feature_maps = layers.Flatten()(feature_maps_input)
-    scalar_feature_input = layers.Input(shape=scalar_features_shape, name="scalar_features")
-    # concatenate inputs
-    x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_feature_input])
-    # the stem
-    stem_kernel_initializer = tf.keras.initializers.variance_scaling(
-        scale=2.0, mode='fan_in', distribution='truncated_normal'
-    )
-    output_kernel_initializer = tf.keras.initializers.random_uniform(
-        minval=-0.03, maxval=0.03
-    )
-    output_bias_initializer = tf.keras.initializers.constant(-0.2)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    x = keras.layers.Dense(512, activation="relu", kernel_initializer=stem_kernel_initializer)(x)
-    state_values = keras.layers.Dense(1,
-                                      kernel_initializer=output_kernel_initializer,
-                                      bias_initializer=output_bias_initializer)(x)
-    raw_advantages = keras.layers.Dense(n_outputs,
-                                        kernel_initializer=output_kernel_initializer,
-                                        bias_initializer=output_bias_initializer)(x)
-    advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)
-    Q_values = state_values + advantages
-    # the model
-    model = keras.Model(inputs=[feature_maps_input, scalar_feature_input],
-                        outputs=[Q_values])
-    return model
-
-
 def get_sparse(weights_in, mask_in):
     import numpy as np
     import tensorflow as tf
     from tensorflow import keras
-
-    class DenseMaskedLayer(keras.layers.Layer):
-        def __init__(self, w_init, b_init, mask):
-            super(DenseMaskedLayer, self).__init__()
-
-            # w size is (input_dimensions, units)
-            self._w = tf.Variable(initial_value=w_init, trainable=True)
-            self._b = tf.Variable(initial_value=b_init, trainable=True)
-            # mask size is similar to w size
-            self._mask = tf.constant(mask, dtype=tf.float32)
-
-        def call(self, inputs, **kwargs):
-            return tf.matmul(inputs, self._w * self._mask) + self._b
 
     class SparseSublayer(keras.layers.Layer):
         def __init__(self, w_init):
@@ -194,24 +112,4 @@ def get_sparse(weights_in, mask_in):
             return Z
 
     model = SparseMLP(weights_in, mask_in)
-    return model
-
-
-def get_halite_sparse(weights_in, mask_in):
-    from tensorflow import keras
-    import tensorflow.keras.layers as layers
-
-    class HaliteSparseMLP(keras.Model):
-        def __init__(self, weights_in, mask_in):
-            super(HaliteSparseMLP, self).__init__()
-            self._model = get_sparse(weights_in, mask_in)
-
-        def call(self, inputs, **kwargs):
-            feature_maps, scalar_features = inputs['feature_maps'], inputs['scalar_features']
-            flatten_feature_maps = layers.Flatten()(feature_maps)
-            x = layers.Concatenate(axis=-1)([flatten_feature_maps, scalar_features])
-            Z = self._model(x)
-            return Z
-
-    model = HaliteSparseMLP(weights_in, mask_in)
     return model

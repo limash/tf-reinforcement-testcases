@@ -15,9 +15,7 @@ from tf_reinforcement_testcases import models, storage
 
 class Agent(abc.ABC):
     NETWORKS = {'CartPole-v1': models.get_q_mlp,
-                'CartPole-v1_duel': models.get_dueling_q_mlp,
-                'gym_halite:halite-v0': models.get_halite_q_mlp,
-                'gym_halite:halite-v0_duel': models.get_halite_dueling_q_mlp}
+                'CartPole-v1_duel': models.get_dueling_q_mlp}
 
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
@@ -28,13 +26,8 @@ class Agent(abc.ABC):
         self._eval_env = gym.make(env_name)
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
-        # assume halite if there is not input shape
-        if not self._input_shape:
-            space = self._train_env.observation_space
-            feature_maps_shape = space['feature_maps'].shape
-            scalar_features_shape = space['scalar_features'].shape
-            self._input_shape = (feature_maps_shape, scalar_features_shape)
 
+        # it contains weighs, masks, and a corresponding reward
         self._data = data
 
         # networks
@@ -132,8 +125,9 @@ class Agent(abc.ABC):
                     break
 
     def _collect_several_episodes(self, epsilon, n_episodes):
-        for _ in range(n_episodes):
+        for i in range(n_episodes):
             self._collect_trajectories_from_episode(epsilon)
+            # print(f"Collected {i} episodes")
 
     def _prepare_td_arguments(self, actions, observations, rewards, dones):
         exponents = tf.expand_dims(tf.range(self._n_steps - 1, dtype=tf.float32), axis=1)
@@ -156,7 +150,7 @@ class Agent(abc.ABC):
         # best_score = 0
 
         step_counter = 0
-        eval_interval = 200
+        eval_interval = 100
         target_model_update_interval = 100
 
         weights = None
@@ -177,7 +171,6 @@ class Agent(abc.ABC):
             # t1 = time.time()
 
             # dm-reverb returns tensors
-            # for sample in self._dataset.take(1):
             sample = next(self._iterator)
             action, obs, reward, done = sample.data
             key, probability, table_size, priority = sample.info
@@ -215,22 +208,6 @@ class Agent(abc.ABC):
                 if self._data is None:
                     weights = self._model.get_weights()
                     mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
-                    # self._model = models.get_sparse(weights, mask)
-                    # self._model = models.get_halite_sparse(weights, mask)
-
-                    # evaluate a sparse model
-                    # redefine methods to be retraced since we have a new model
-                    # self._predict = tf.function(self._predict.python_function)
-                    # self._training_step = tf.function(self._training_step.python_function)
-                    # mean_episode_reward = self._evaluate_episodes_greedy()
-                    # print(f"Episode reward of a sparse net is {mean_episode_reward}")
-                    # for debugging a sparse model with a batch input
-                    # self._training_step(*experiences, info=info)
-
-                    # old_weights = copy.deepcopy(weights)
-                    # indx = list(map(lambda x: np.argwhere(np.abs(x) > 0.1), weights))
-                    # differences = list(map(lambda x, y: x - y, weights, old_weights))
-                    # diff_indx = list(map(lambda x: np.argwhere(np.abs(x) < 0.1), differences))
                 # write the old data else
                 else:
                     weights = self._data['weights']

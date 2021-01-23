@@ -1,5 +1,3 @@
-from collections import deque
-
 import ray
 import numpy as np
 import tensorflow as tf
