@@ -15,7 +15,7 @@ AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "priority_dd": deep_q_learning.PriorityDoubleDuelingDQNAgent}
 
 
-def one_call(env_name, agent_object, data):
+def one_call(env_name, agent_object, data, make_sparse):
     batch_size = 64
     n_steps = 2
     buffer = storage.UniformBuffer(min_size=batch_size)
@@ -23,7 +23,7 @@ def one_call(env_name, agent_object, data):
     agent = agent_object(env_name,
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          n_steps,
-                         data)
+                         data, make_sparse)
     weights, mask, reward = agent.train(iterations_number=2000)
 
     data = {
@@ -36,37 +36,37 @@ def one_call(env_name, agent_object, data):
     print("Done")
 
 
-def multi_call(env_name, agent_object, data):
+def multi_call(env_name, agent_object, data, make_sparse):
     ray.init()
     parallel_calls = 8
     batch_size = 64
     n_steps = 2
     buffer = storage.UniformBuffer(min_size=batch_size)
 
+    agent_object = ray.remote(agent_object)
     agents = [agent_object.remote(env_name,
                                   buffer.table_name, buffer.server_port, buffer.min_size,
                                   n_steps,
-                                  data) for _ in range(parallel_calls)]
+                                  data, make_sparse) for _ in range(parallel_calls)]
     futures = [agent.train.remote(iterations_number=2000) for agent in agents]
     outputs = ray.get(futures)
 
-    if data is None:
-        rewards = np.empty(parallel_calls)
-        weights_list, mask_list = [], []
-        for count, (weights, mask, reward) in enumerate(outputs):
-            weights_list.append(weights)
-            mask_list.append(mask)
-            rewards[count] = reward
-            misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
-            misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
-        argmax = rewards.argmax()
-        data = {
-            'weights': weights_list[argmax],
-            'mask': mask_list[argmax],
-            'reward': rewards[argmax]
-        }
-        with open('data/data.pickle', 'wb') as f:
-            pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+    rewards = np.empty(parallel_calls)
+    weights_list, mask_list = [], []
+    for count, (weights, mask, reward) in enumerate(outputs):
+        weights_list.append(weights)
+        mask_list.append(mask)
+        rewards[count] = reward
+        misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
+        misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
+    argmax = rewards.argmax()
+    data = {
+        'weights': weights_list[argmax],
+        'mask': mask_list[argmax],
+        'reward': rewards[argmax]
+    }
+    with open('data/data.pickle', 'wb') as f:
+        pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
 
     ray.shutdown()
     print("Done")
@@ -76,9 +76,9 @@ if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
 
     try:
-        with open('data/data.pickle', 'rb') as f:
-            data = pickle.load(f)
+        with open('data/data.pickle', 'rb') as file:
+            init_data = pickle.load(file)
     except FileNotFoundError:
-        data = None
+        init_data = None
 
-    multi_call(cart_pole, AGENTS['regular'], data)
+    multi_call(cart_pole, AGENTS['double_dueling'], init_data, make_sparse=False)

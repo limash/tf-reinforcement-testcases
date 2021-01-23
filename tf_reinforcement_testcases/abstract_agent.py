@@ -1,12 +1,9 @@
 import abc
-# import time
-# import copy
 import itertools as it
 
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-
 import gym
 import reverb
 
@@ -20,7 +17,7 @@ class Agent(abc.ABC):
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
                  n_steps=2,
-                 data=None):
+                 data=None, make_sparse=False):
         # environments; their hyperparameters
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
@@ -29,6 +26,8 @@ class Agent(abc.ABC):
 
         # it contains weighs, masks, and a corresponding reward
         self._data = data
+        self._is_sparse = make_sparse
+        assert not (not data and make_sparse), "Making a sparse model needs data of weights and mask"
 
         # networks
         self._model = None
@@ -127,7 +126,6 @@ class Agent(abc.ABC):
     def _collect_several_episodes(self, epsilon, n_episodes):
         for i in range(n_episodes):
             self._collect_trajectories_from_episode(epsilon)
-            # print(f"Collected {i} episodes")
 
     def _prepare_td_arguments(self, actions, observations, rewards, dones):
         exponents = tf.expand_dims(tf.range(self._n_steps - 1, dtype=tf.float32), axis=1)
@@ -147,7 +145,6 @@ class Agent(abc.ABC):
         raise NotImplementedError
 
     def train(self, iterations_number=10000):
-        # best_score = 0
 
         step_counter = 0
         eval_interval = 100
@@ -157,18 +154,12 @@ class Agent(abc.ABC):
         mask = None
         mean_episode_reward = 0
 
-        # weights = self._model.get_weights()
-        # old_weights = copy.deepcopy(weights)
-
         for iteration in range(iterations_number):
             # collecting
-            # t0 = time.time()
-            # do not collect new experience if we have not used previous
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
-            # if self._items_created < self._items_sampled:
+            # do not collect new experience if we have not used previous
             if items_created < self._items_sampled:
                 self._collect_trajectories_from_episode(self._epsilon)
-            # t1 = time.time()
 
             # dm-reverb returns tensors
             sample = next(self._iterator)
@@ -178,41 +169,32 @@ class Agent(abc.ABC):
 
             self._items_sampled += self._sample_batch_size
 
-            # training
-            # t2 = time.time()
             self._training_step(*experiences, info=info)
             step_counter += 1
-            # t3 = time.time()
-            # if done:
-            #     obs = self._train_env.reset()
 
             if step_counter % eval_interval == 0:
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
                                                                             mean_episode_reward,
                                                                             self._epsilon))
-                # print(f"Created items count: {self._items_created}")
                 print(f"Created items count: {items_created}")
                 print(f"Sampled items count: {self._items_sampled}")
-            #     print(f"Time spend for sampling is {t1 - t0}")
-            #     print(f"Time spend for training is {t3 - t2}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
                 weights = self._model.get_weights()
                 self._target_model.set_weights(weights)
 
-            # make a sparse model at the last step
+            # store weights at the last step
             if step_counter % iterations_number == 0:
-                # if there is no data available, make a sparse net
-                if self._data is None:
-                    weights = self._model.get_weights()
-                    mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
-                # write the old data else
-                else:
+                # do not update data in case of sparse net
+                # currently the only way to make a sparse net is from a dense net weights and mask
+                if self._is_sparse:
                     weights = self._data['weights']
                     mask = self._data['mask']
                     mean_episode_reward = self._data['reward']
+                else:
+                    weights = self._model.get_weights()
+                    mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
 
-        # self._model.set_weights(best_weights)
         return weights, mask, mean_episode_reward

@@ -1,4 +1,3 @@
-import ray
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -7,24 +6,29 @@ from tf_reinforcement_testcases import models, storage
 from tf_reinforcement_testcases.abstract_agent import Agent
 
 
-@ray.remote
 class RegularDQNAgent(Agent):
 
     def __init__(self, env_name, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
+        # train a model from scratch
         if self._data is None:
             self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=10)
-        else:
+        # continue a model training
+        elif self._data and not self._is_sparse:
+            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            self._model.set_weights(self._data['weights'])
+            # collect date with epsilon greedy policy
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+        # make and train a sparse model from a dense model
+        elif self._data and self._is_sparse:
             weights = self._data['weights']
             random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
             self._model = models.get_sparse(random_weights, self._data['mask'])
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=10)
-            # collect date with epsilon greedy policy
-            # self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
 
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
@@ -45,7 +49,7 @@ class RegularDQNAgent(Agent):
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
 
-class FixedQValuesDQNAgent(Agent):
+class FixedQValuesDQNAgent(RegularDQNAgent):
     """
     The agent uses a target model to establish target Q values
     """
@@ -53,20 +57,14 @@ class FixedQValuesDQNAgent(Agent):
     def __init__(self, env_name, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
-        if self._data is None:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-            self._target_model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-            # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+        if self._is_sparse:
+            # make a target model with the weights stored in data
+            self._target_model = models.get_sparse(self._data['weights'], self._data['mask'])
+            # replace weights of the target model with a weights from the model
+            self._target_model.set_weights(self._model.get_weights())
         else:
-            weights = self._data['weights']
-            random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
-            self._model = models.get_sparse(random_weights, self._data['mask'])
-            self._target_model = models.get_sparse(random_weights, self._data['mask'])
-            # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
-            # collect date with epsilon greedy policy
-            # self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+            self._target_model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            self._target_model.set_weights(self._model.get_weights())
 
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
@@ -74,7 +72,7 @@ class FixedQValuesDQNAgent(Agent):
         total_rewards, first_observations, last_observations, last_dones, last_discounted_gamma, second_actions = \
             self._prepare_td_arguments(actions, observations, rewards, dones)
 
-        next_Q_values = self._target_model(last_observations)  # below everything is similar to the regular DQN
+        next_Q_values = self._target_model(last_observations)  # the only difference comparing to the vanilla dqn
         max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
         target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)
@@ -87,30 +85,12 @@ class FixedQValuesDQNAgent(Agent):
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
 
-class DoubleDQNAgent(Agent):
+class DoubleDQNAgent(FixedQValuesDQNAgent):
     """
     To establish target Q values the agent uses:
     a model to predict best next actions
     a target model to predict next best Q values corresponding to the best next actions
     """
-
-    def __init__(self, env_name, *args, **kwargs):
-        super().__init__(env_name, *args, **kwargs)
-
-        if self._data is None:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-            self._target_model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
-            # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
-        else:
-            weights = self._data['weights']
-            random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
-            self._model = models.get_sparse(random_weights, self._data['mask'])
-            self._target_model = models.get_sparse(random_weights, self._data['mask'])
-            # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
-            # collect date with epsilon greedy policy
-            # self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
 
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
@@ -139,15 +119,25 @@ class DoubleDuelingDQNAgent(DoubleDQNAgent):
     """
 
     def __init__(self, env_name, *args, **kwargs):
-        super(DoubleDQNAgent, self).__init__(env_name, *args, **kwargs)
+        # we need a training_step from a DoubleDQNAgent, but initialization from an abstract Agent
+        super(RegularDQNAgent, self).__init__(env_name, *args, **kwargs)
 
-        if self._data:
-            print("Dueling net does not use sparse representation")
+        assert not (self._data and self._is_sparse), "A sparse model is not available for dueling nets"
 
-        self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+        # train a model from scratch
+        if self._data is None:
+            self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+            # collect some data with a random policy (epsilon 1 corresponds to it) before training
+            self._collect_several_episodes(epsilon=1, n_episodes=10)
+        # continue a model training
+        elif self._data and not self._is_sparse:
+            self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+            self._model.set_weights(self._data['weights'])
+            # collect date with epsilon greedy policy
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+
         self._target_model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
-        # collect some data with a random policy (epsilon 1 corresponds to it) before training
-        self._collect_several_episodes(epsilon=1, n_episodes=10)
+        self._target_model.set_weights(self._model.get_weights())
 
 
 class PriorityDoubleDuelingDQNAgent(Agent):

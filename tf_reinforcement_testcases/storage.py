@@ -135,7 +135,7 @@ class PriorityBuffer:
 
     def sample_batch(self):
         for sample in self._dataset.take(1):
-            obs, action, reward, next_obs, done = sample.data
+            obs, action, reward, next_obs, done = sample.init_data
             key, probability, table_size, priority = sample.info
         # sample = next(self._iterator)
         return (obs, action, reward, next_obs, done), (key, probability, table_size, priority)
