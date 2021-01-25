@@ -11,7 +11,8 @@ from tf_reinforcement_testcases import deep_q_learning, storage, misc
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
           "double": deep_q_learning.DoubleDQNAgent,
-          "double_dueling": deep_q_learning.DoubleDuelingDQNAgent}
+          "double_dueling": deep_q_learning.DoubleDuelingDQNAgent,
+          "categorical": deep_q_learning.CategoricalDQNAgent}
 
 
 def one_call(env_name, agent_object, data, make_sparse):
@@ -37,7 +38,7 @@ def one_call(env_name, agent_object, data, make_sparse):
 
 def multi_call(env_name, agent_object, data, make_sparse):
     ray.init()
-    parallel_calls = 8
+    parallel_calls = 15
     batch_size = 64
     n_steps = 2
     buffer = storage.UniformBuffer(min_size=batch_size)
@@ -80,4 +81,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(cart_pole, AGENTS['regular'], init_data, make_sparse=False)
+    multi_call(cart_pole, AGENTS['categorical'], init_data, make_sparse=False)
