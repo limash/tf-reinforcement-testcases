@@ -222,3 +222,51 @@ class CategoricalDQNAgent(Agent):
             loss = tf.reduce_mean(loss)
         grads = tape.gradient(loss, self._model.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
+        return target_distribution, chosen_action_logits
+
+
+class PriorityCategoricalDQNAgent(CategoricalDQNAgent):
+    """
+    It is unclear how reverb samples and how to change priorities if an item consist of
+    several time steps
+    Below implementation is for items of one time step
+    """
+
+    def __init__(self, env_name, *args, **kwargs):
+        super().__init__(env_name, *args, **kwargs)
+
+        raise NotImplementedError
+
+        # for priory buffer version
+        self._importance_sampling = tf.constant(1.)  # should be multiplied by loss
+
+        # priority buffer hyperparameters
+        self._n_elements_in_buffer = None
+        self._beta = tf.Variable(0.4, dtype=tf.float32)
+        self._beta_increment = tf.constant(0.0001, dtype=tf.float32)
+
+    def _training_step(self, actions, observations, rewards, dones, info):
+        # update importance sampling hyperparameter
+        keys = info[0]
+        # dm-reverb info has a float64 format, which is incompatible
+        info = tf.nest.map_structure(lambda x: tf.cast(x, dtype=tf.float32), info[1:])
+        probs, table_sizes, priors = info
+        beta = tf.reduce_min(tf.stack([tf.constant(1.0), self._beta + self._beta_increment]))
+        importance_sampling = tf.pow(self._n_elements_in_buffer * probs, -beta)
+        max_importance = tf.reduce_max(importance_sampling)
+        self._importance_sampling = importance_sampling / max_importance
+
+        # the main part
+        target_distribution, chosen_action_logits = super()._training_step(actions, observations, rewards, dones, info)
+        probabilities = tf.nn.softmax(chosen_action_logits)
+        Q_values = tf.reduce_sum(self._support * probabilities, axis=-1)
+        next_Q_values = tf.reduce_sum(self._support * target_distribution, axis=-1)
+
+        # calculate new priorities
+        absolute_errors = tf.abs(next_Q_values - Q_values)  # td error
+        absolute_errors = absolute_errors + tf.constant([0.01])  # to avoid skipping some exp
+        clipped_errors = tf.minimum(absolute_errors, tf.constant([1.]))  # errors from 0.01 to 1.
+        new_priorities = tf.pow(clipped_errors, tf.constant([0.6]))  # increase prob of the less prob priorities
+        new_priorities = tf.cast(new_priorities, dtype=tf.float64)
+        new_priorities = tf.squeeze(new_priorities, axis=-1)
+        self._replay_memory_client.update_priorities(self._table_name, keys, new_priorities)

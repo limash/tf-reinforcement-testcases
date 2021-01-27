@@ -1,4 +1,5 @@
 import os
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # to disable tf messages
 
 import pickle
@@ -12,14 +13,23 @@ AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
           "double": deep_q_learning.DoubleDQNAgent,
           "double_dueling": deep_q_learning.DoubleDuelingDQNAgent,
-          "categorical": deep_q_learning.CategoricalDQNAgent}
+          "categorical": deep_q_learning.CategoricalDQNAgent,
+          "priority_categorical": deep_q_learning.PriorityCategoricalDQNAgent}
+
+BUFFERS = {"regular": storage.UniformBuffer,
+           "fixed": storage.UniformBuffer,
+           "double": storage.UniformBuffer,
+           "double_dueling": storage.UniformBuffer,
+           "categorical": storage.UniformBuffer,
+           "priority_categorical": storage.PriorityBuffer}
 
 
-def one_call(env_name, agent_object, data, make_sparse):
+def one_call(env_name, agent_name, data, make_sparse):
     batch_size = 64
     n_steps = 2
-    buffer = storage.UniformBuffer(min_size=batch_size)
+    buffer = BUFFERS[agent_name](min_size=batch_size)
 
+    agent_object = AGENTS[agent_name]
     agent = agent_object(env_name,
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          n_steps,
@@ -36,13 +46,14 @@ def one_call(env_name, agent_object, data, make_sparse):
     print("Done")
 
 
-def multi_call(env_name, agent_object, data, make_sparse):
+def multi_call(env_name, agent_name, data, make_sparse):
     ray.init()
     parallel_calls = 15
     batch_size = 64
     n_steps = 2
-    buffer = storage.UniformBuffer(min_size=batch_size)
+    buffer = BUFFERS[env_name](min_size=batch_size)
 
+    agent_object = AGENTS[agent_name]
     agent_object = ray.remote(agent_object)
     agents = [agent_object.remote(env_name,
                                   buffer.table_name, buffer.server_port, buffer.min_size,
@@ -81,4 +92,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(cart_pole, AGENTS['categorical'], init_data, make_sparse=False)
+    one_call(cart_pole, 'priority_categorical', init_data, make_sparse=False)

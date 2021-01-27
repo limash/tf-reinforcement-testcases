@@ -36,10 +36,6 @@ def initialize_dataset(server_port, table_name, observations_shape, batch_size, 
 
 
 class UniformBuffer:
-    # Only server.port and a table name are required to make a client and a dataset
-    # thus, theoretically a function returning a port number and a table name
-    # should be enough, but it does not work;
-    # a server object apparently should be 'alive', above or same lvl of all objects using it
     def __init__(self,
                  min_size: int = 64,
                  max_size: int = 40000):
@@ -57,7 +53,37 @@ class UniformBuffer:
             ],
             # Sets the port to None to make the server pick one automatically.
             port=None)
-        self._dataset = None
+
+    @property
+    def table_name(self) -> str:
+        return self._table_name
+
+    @property
+    def min_size(self) -> int:
+        return self._min_size
+
+    @property
+    def server_port(self) -> int:
+        return self._server.port
+
+
+class PriorityBuffer:
+    def __init__(self,
+                 min_size: int = 64,
+                 max_size: int = 40000):
+        self._min_size = min_size
+        self._table_name = 'priority_table'
+        self._server = reverb.Server(
+            tables=[
+                reverb.Table(
+                    name=self._table_name,
+                    sampler=reverb.selectors.Prioritized(priority_exponent=0.8),
+                    remover=reverb.selectors.Fifo(),
+                    max_size=int(max_size),
+                    rate_limiter=reverb.rate_limiters.MinSize(min_size)),
+            ],
+            # Sets the port to None to make the server pick one automatically.
+            port=None)
 
     @property
     def table_name(self) -> str:
