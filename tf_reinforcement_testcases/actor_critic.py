@@ -1,130 +1,58 @@
-import logging
-
 import numpy as np
-
 import tensorflow as tf
-import tensorflow.keras.losses as losses
 
-from tf_reinforcement_testcases import misc
 from tf_reinforcement_testcases.abstract_agent import Agent
+from tf_reinforcement_testcases import models
 
 
 class ACAgent(Agent):
 
-    def __init__(self, env_name):
-        super().__init__(env_name)
+    def __init__(self, env_name, *args, **kwargs):
+        super().__init__(env_name, *args, **kwargs)
 
-        # Coefficients for the loss terms
-        self.value_c = 0.5
-        self.entropy_c = 1e-4
+        assert not (self._data and self._is_sparse), "A sparse model is not available for actor-critic"
 
-        self.actor_model = None
-        self.model = None
+        # train a model from scratch
+        if self._data is None:
+            self._model = models.get_actor_critic(self._input_shape, self._n_outputs)
+            # collect some data with a random policy (epsilon 1 corresponds to it) before training
+            self._collect_several_episodes(epsilon=1, n_episodes=10)
+        # continue a model training
+        elif self._data and not self._is_sparse:
+            self._model = models.get_actor_critic(self._input_shape, self._n_outputs)
+            self._model.set_weights(self._data['weights'])
+            # collect date with epsilon greedy policy
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
 
-    def _training_step(self, tf_consts_and_vars, info,
-                       observations, actions, rewards, next_observations, dones,
-                       ):
-        return NotImplementedError
+    def _epsilon_greedy_policy(self, obs, epsilon):
+        if np.random.rand() < epsilon:
+            return np.random.randint(self._n_outputs)
+        else:
+            obs = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), obs)
+            logits, Q_values = self._predict(obs)
+            probabilities = tf.nn.softmax(logits)
+            return np.argmax(probabilities[0])  # switch to sample categorical
 
-    def _value_loss(self, returns, value):
-        # Value loss is typically MSE between value estimates and returns.
-        return self.value_c * losses.mean_squared_error(returns, value)
+    def _training_step(self, actions, observations, rewards, dones, info):
 
-    def _logits_loss(self, actions_and_advantages, logits):
-        # A trick to input actions and advantages through the same API.
-        actions, advantages = tf.split(actions_and_advantages, 2, axis=-1)
-        # Sparse categorical CE loss obj that supports sample_weight arg on `call()`.
-        # `from_logits` argument ensures transformation into normalized probabilities.
-        weighted_sparse_ce = losses.SparseCategoricalCrossentropy(from_logits=True)
-        # Policy loss is defined by policy gradients, weighted by advantages.
-        # Note: we only calculate the loss on the actions we've actually taken.
-        actions = tf.cast(actions, tf.int32)
-        policy_loss = weighted_sparse_ce(actions, logits, sample_weight=advantages)
-        # Entropy loss can be calculated as cross-entropy over itself.
-        probs = tf.nn.softmax(logits)
-        entropy_loss = losses.categorical_crossentropy(probs, probs)
-        # We want to minimize policy and maximize entropy losses.
-        # Here signs are flipped because the optimizer minimizes.
-        return policy_loss - self.entropy_c * entropy_loss
+        total_rewards, first_observations, last_observations, last_dones, last_discounted_gamma, second_actions = \
+            self._prepare_td_arguments(actions, observations, rewards, dones)
 
-    def test(self, env, render=False):
-        obs, done, ep_reward = env.reset(), False, 0
-        if self.is_halite:
-            obs = misc.process_halite_obs(obs)
-        # obs = tf.nest.map_structure(lambda x: x[np.newaxis, :], obs)
-
-        count = 0
-        while not done:
-            action, _ = self.model.action_value(obs[None, :])
-            obs, reward, done, _ = env.step(int(action))
-            if self.is_halite:
-                obs = misc.process_halite_obs(obs)
-
-            ep_reward += reward
-            count += 1
-            if render:
-                env.render()
-        print(count)
-        return ep_reward
-
-    def train(self, env, batch_sz=64, updates=250):
-        """
-        It samples actions, values, rewards, dones 'batch_sz' number of times
-
-        Args:
-            env: gym environment object
-            batch_sz: a number of steps to save in a batch
-            updates: a number of updates on the batch
-
-        Returns:
-            ep_rewards:
-        """
-        # Storage helpers for a single batch of data.
-        actions = np.empty((batch_sz,), dtype=np.int32)
-        rewards, dones, values = np.empty((3, batch_sz))
-        # Training loop: collect samples, send to optimizer, repeat updates times.
-        ep_rewards = [0.0]
-        next_obs = env.reset()
-        if self.is_halite:
-            next_obs = misc.process_halite_obs(next_obs)
-
-        observations = np.empty((batch_sz,) + next_obs.shape)
-        for update in range(updates):
-            for step in range(batch_sz):
-                observations[step] = next_obs.copy()
-
-                actions[step], values[step] = self.model.action_value(next_obs[None, :])
-                next_obs, rewards[step], dones[step], _ = env.step(actions[step])
-                if self.is_halite:
-                    next_obs = misc.process_halite_obs(next_obs)
-
-                ep_rewards[-1] += rewards[step]
-                if dones[step]:
-                    ep_rewards.append(0.0)
-                    next_obs = env.reset()
-                    if self.is_halite:
-                        next_obs = misc.process_halite_obs(next_obs)
-
-                    logging.info("Episode: %03d, Reward: %03d" % (len(ep_rewards) - 1, ep_rewards[-2]))
-
-            _, next_value = self.model.action_value(next_obs[None, :])
-            returns, advs = self._returns_advantages(rewards, dones, values, next_value)
-            # A trick to input actions and advantages through same API.
-            acts_and_advs = np.concatenate([actions[:, None], advs[:, None]], axis=-1)
-            # Performs a full training step on the collected batch.
-            # Note: no need to mess around with gradients, Keras API handles it.
-            losses = self.model.train_on_batch(observations, [acts_and_advs, returns])
-            logging.debug("[%d/%d] Losses: %s" % (update + 1, updates, losses))
-
-        return ep_rewards
-
-    def _returns_advantages(self, rewards, dones, values, next_value):
-        # `next_value` is the bootstrap value estimate of the future state (critic).
-        returns = np.append(np.zeros_like(rewards), next_value, axis=-1)
-        # Returns are calculated as discounted sum of future rewards.
-        for t in reversed(range(rewards.shape[0])):
-            returns[t] = rewards[t] + self.gamma * returns[t + 1] * (1 - dones[t])
-        returns = returns[:-1]
-        # Advantages are equal to returns - baseline (value estimates in our case).
-        advantages = returns - values
-        return returns, advantages
+        next_logits, next_Q_values = self._model(last_observations)
+        max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+        target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
+        target_Q_values = tf.expand_dims(target_Q_values, -1)
+        mask = tf.one_hot(second_actions, self._n_outputs, dtype=tf.float32)
+        with tf.GradientTape() as tape:
+            all_logits, all_Q_values = self._model(first_observations)
+            probs = tf.nn.softmax(all_logits)
+            masked_probs = tf.reduce_sum(probs * mask, axis=1, keepdims=True)
+            logs = tf.math.log(masked_probs)
+            Q_values = tf.reduce_sum(all_Q_values * mask, axis=1, keepdims=True)
+            td_error = tf.stop_gradient(target_Q_values - Q_values)  # to prevent updating critic part by actor
+            actor_loss = -1*logs*td_error
+            actor_loss = tf.reduce_mean(actor_loss)
+            critic_loss = tf.reduce_mean(self._loss_fn(target_Q_values, Q_values))
+            loss = actor_loss + critic_loss
+        grads = tape.gradient(loss, self._model.trainable_variables)
+        self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))

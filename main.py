@@ -7,21 +7,23 @@ import pickle
 import ray
 import numpy as np
 
-from tf_reinforcement_testcases import deep_q_learning, storage, misc
+from tf_reinforcement_testcases import deep_q_learning, actor_critic, storage, misc
 
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
           "double": deep_q_learning.DoubleDQNAgent,
           "double_dueling": deep_q_learning.DoubleDuelingDQNAgent,
           "categorical": deep_q_learning.CategoricalDQNAgent,
-          "priority_categorical": deep_q_learning.PriorityCategoricalDQNAgent}
+          "priority_categorical": deep_q_learning.PriorityCategoricalDQNAgent,
+          "actor_critic": actor_critic.ACAgent}
 
 BUFFERS = {"regular": storage.UniformBuffer,
            "fixed": storage.UniformBuffer,
            "double": storage.UniformBuffer,
            "double_dueling": storage.UniformBuffer,
            "categorical": storage.UniformBuffer,
-           "priority_categorical": storage.PriorityBuffer}
+           "priority_categorical": storage.PriorityBuffer,
+           "actor_critic": storage.UniformBuffer}
 
 
 def one_call(env_name, agent_name, data, make_sparse):
@@ -51,7 +53,7 @@ def multi_call(env_name, agent_name, data, make_sparse):
     parallel_calls = 15
     batch_size = 64
     n_steps = 2
-    buffer = BUFFERS[env_name](min_size=batch_size)
+    buffer = BUFFERS[agent_name](min_size=batch_size)
 
     agent_object = AGENTS[agent_name]
     agent_object = ray.remote(agent_object)
@@ -92,4 +94,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    one_call(cart_pole, 'priority_categorical', init_data, make_sparse=False)
+    one_call(cart_pole, 'actor_critic', init_data, make_sparse=False)

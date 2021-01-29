@@ -1,19 +1,28 @@
 # move all imports inside functions to use ray.remote multitasking
 
-def get_q_mlp(input_shape, n_outputs):
-    """
-    Return Q values of actions
-    """
+def get_mlp(input_shape, n_outputs):
     from tensorflow import keras
+    import tensorflow.keras.layers as layers
 
-    model = keras.models.Sequential([
-        keras.layers.Dense(100, activation="relu",
-                           input_shape=input_shape),
-        # kernel_initializer = keras.initializers.RandomUniform(minval=-0.03, maxval=0.03),
-        # keras.layers.Dense(128, activation="relu"),
-        keras.layers.Dense(n_outputs)
-        # keras.layers.Dense(n_outputs, activation="softmax")  # to return probabilities
-    ])
+    inputs = layers.Input(shape=input_shape)
+    x = layers.Dense(100, activation="relu")(inputs)
+    outputs = layers.Dense(n_outputs)(x)
+    model = keras.Model(inputs=[inputs], outputs=[outputs])
+    return model
+
+
+def get_actor_critic(input_shape, n_outputs):
+    from tensorflow import keras
+    import tensorflow.keras.layers as layers
+
+    x = get_mlp(input_shape, 10)
+
+    inputs = layers.Input(shape=input_shape)
+    x = x(inputs)
+    x = layers.Activation("relu")(x)
+    logits = layers.Dense(n_outputs)(x)  # are not normalized logs
+    q_values = layers.Dense(n_outputs)(x)
+    model = keras.Model(inputs=[inputs], outputs=[logits, q_values])
     return model
 
 
@@ -22,14 +31,14 @@ def get_dueling_q_mlp(input_shape, n_outputs):
     from tensorflow import keras
     import tensorflow.keras.layers as layers
 
-    input_states = layers.Input(shape=input_shape)
-    x = layers.Dense(100, activation="relu")(input_states)
+    inputs = layers.Input(shape=input_shape)
+    x = layers.Dense(100, activation="relu")(inputs)
     # x = layers.Dense(32, activation="relu")(x)
     state_values = layers.Dense(1)(x)
     raw_advantages = layers.Dense(n_outputs)(x)
     advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)
     Q_values = state_values + advantages
-    model = keras.Model(inputs=[input_states], outputs=[Q_values])
+    model = keras.Model(inputs=[inputs], outputs=[Q_values])
     return model
 
 
