@@ -12,22 +12,22 @@ class RegularDQNAgent(Agent):
 
         # train a model from scratch
         if self._data is None:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            self._model = models.get_mlp(self._input_shape, self._n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            self._model = models.get_mlp(self._input_shape, self._n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
-            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
         # make and train a sparse model from a dense model
         elif self._data and self._is_sparse:
             weights = self._data['weights']
             random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
             self._model = models.get_sparse(random_weights, self._data['mask'])
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
@@ -62,7 +62,7 @@ class FixedQValuesDQNAgent(RegularDQNAgent):
             # replace weights of the target model with a weights from the model
             self._target_model.set_weights(self._model.get_weights())
         else:
-            self._target_model = Agent.NETWORKS[env_name](self._input_shape, self._n_outputs)
+            self._target_model = models.get_mlp(self._input_shape, self._n_outputs)
             self._target_model.set_weights(self._model.get_weights())
 
     @tf.function
@@ -126,17 +126,17 @@ class DoubleDuelingDQNAgent(DoubleDQNAgent):
 
         # train a model from scratch
         if self._data is None:
-            self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+            self._model = models.get_dueling_q_mlp(self._input_shape, self._n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+            self._model = models.get_dueling_q_mlp(self._input_shape, self._n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
-            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
 
-        self._target_model = Agent.NETWORKS[env_name + '_duel'](self._input_shape, self._n_outputs)
+        self._target_model = models.get_dueling_q_mlp(self._input_shape, self._n_outputs)
         self._target_model.set_weights(self._model.get_weights())
 
 
@@ -153,22 +153,22 @@ class CategoricalDQNAgent(Agent):
         cat_n_outputs = self._n_outputs * self._n_atoms
         # train a model from scratch
         if self._data is None:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, cat_n_outputs)
+            self._model = models.get_mlp(self._input_shape, cat_n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = Agent.NETWORKS[env_name](self._input_shape, cat_n_outputs)
+            self._model = models.get_mlp(self._input_shape, cat_n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
-            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=10)
+            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
         # make and train a sparse model from a dense model
         elif self._data and self._is_sparse:
             weights = self._data['weights']
             random_weights = [np.random.uniform(low=-0.03, high=0.03, size=item.shape) for item in weights]
             self._model = models.get_sparse(random_weights, self._data['mask'])
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=10)
+            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:

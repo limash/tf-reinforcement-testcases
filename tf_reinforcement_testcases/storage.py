@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 
 import reverb
@@ -20,13 +19,13 @@ def initialize_dataset(server_port, table_name, observations_shape, batch_size, 
     rewards_shape = tf.TensorShape([])
     dones_shape = tf.TensorShape([])
 
-    obs_dtypes = tf.nest.map_structure(lambda x: np.float32, observations_shape)
+    obs_dtypes = tf.nest.map_structure(lambda x: tf.float32, observations_shape)
 
     dataset = reverb.ReplayDataset(
         server_address=f'localhost:{server_port}',
         table=table_name,
         max_in_flight_samples_per_worker=10,
-        dtypes=(np.int32, obs_dtypes, np.float32, np.float32),
+        dtypes=(tf.int32, obs_dtypes, tf.float32, tf.float32),
         shapes=(actions_shape, observations_shape, rewards_shape, dones_shape))
 
     dataset = dataset.batch(n_steps)

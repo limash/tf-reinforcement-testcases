@@ -48,9 +48,9 @@ def one_call(env_name, agent_name, data, make_sparse):
     print("Done")
 
 
-def multi_call(env_name, agent_name, data, make_sparse):
+def multi_call(env_name, agent_name, data, make_sparse, plot=False):
     ray.init()
-    parallel_calls = 15
+    parallel_calls = 10
     batch_size = 64
     n_steps = 2
     buffer = BUFFERS[agent_name](min_size=batch_size)
@@ -70,8 +70,9 @@ def multi_call(env_name, agent_name, data, make_sparse):
         weights_list.append(weights)
         mask_list.append(mask)
         rewards[count] = reward
-        misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
-        misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
+        if plot:
+            misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
+            misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
     argmax = rewards.argmax()
     data = {
         'weights': weights_list[argmax],
@@ -87,6 +88,7 @@ def multi_call(env_name, agent_name, data, make_sparse):
 
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
+    goose = 'gym_goose:goose-v0'
 
     try:
         with open('data/data.pickle', 'rb') as file:
@@ -94,4 +96,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    one_call(cart_pole, 'actor_critic', init_data, make_sparse=False)
+    multi_call(cart_pole, 'regular', init_data, make_sparse=False)

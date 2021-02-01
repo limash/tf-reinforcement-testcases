@@ -7,12 +7,10 @@ from tensorflow import keras
 import gym
 import reverb
 
-from tf_reinforcement_testcases import models, storage
+from tf_reinforcement_testcases import storage
 
 
 class Agent(abc.ABC):
-    NETWORKS = {'CartPole-v1': models.get_mlp,
-                'CartPole-v1_duel': models.get_dueling_q_mlp}
 
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,

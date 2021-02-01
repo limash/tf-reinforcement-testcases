@@ -3,9 +3,12 @@
 def get_mlp(input_shape, n_outputs):
     from tensorflow import keras
     import tensorflow.keras.layers as layers
-
+    
     inputs = layers.Input(shape=input_shape)
-    x = layers.Dense(100, activation="relu")(inputs)
+    x = layers.Dense(500, kernel_initializer="he_normal")(inputs)
+    x = layers.LeakyReLU(alpha=0.2)(x)
+    x = layers.Dense(500, kernel_initializer="he_normal")(x)
+    x = layers.LeakyReLU(alpha=0.2)(x)
     outputs = layers.Dense(n_outputs)(x)
     model = keras.Model(inputs=[inputs], outputs=[outputs])
     return model
