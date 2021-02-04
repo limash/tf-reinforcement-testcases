@@ -3,12 +3,29 @@
 def get_mlp(input_shape, n_outputs):
     from tensorflow import keras
     import tensorflow.keras.layers as layers
-    
+
     inputs = layers.Input(shape=input_shape)
-    x = layers.Dense(500, kernel_initializer="he_normal")(inputs)
-    x = layers.LeakyReLU(alpha=0.2)(x)
-    x = layers.Dense(500, kernel_initializer="he_normal")(x)
-    x = layers.LeakyReLU(alpha=0.2)(x)
+
+    # x = layers.Dense(500, kernel_initializer="he_normal")(inputs)
+    # x = layers.LeakyReLU(alpha=0.2)(x)
+    # x = layers.Dense(500, kernel_initializer="he_normal")(x)
+    # x = layers.LeakyReLU(alpha=0.2)(x)
+
+    x = layers.Dense(500, kernel_initializer="he_normal",
+                     kernel_regularizer=keras.regularizers.l2(0.01),
+                     use_bias=False)(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.ELU()(x)
+
+    x = layers.Dense(500, kernel_initializer="he_normal",
+                     kernel_regularizer=keras.regularizers.l2(0.01),
+                     use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.ELU()(x)
+
+    # x = layers.Dense(50, activation="relu")(inputs)
+    # x = layers.Dense(10, activation="relu")(x)
+
     outputs = layers.Dense(n_outputs)(x)
     model = keras.Model(inputs=[inputs], outputs=[outputs])
     return model
@@ -36,7 +53,6 @@ def get_dueling_q_mlp(input_shape, n_outputs):
 
     inputs = layers.Input(shape=input_shape)
     x = layers.Dense(100, activation="relu")(inputs)
-    # x = layers.Dense(32, activation="relu")(x)
     state_values = layers.Dense(1)(x)
     raw_advantages = layers.Dense(n_outputs)(x)
     advantages = raw_advantages - tf.reduce_max(raw_advantages, axis=1, keepdims=True)

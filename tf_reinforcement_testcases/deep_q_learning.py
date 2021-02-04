@@ -145,8 +145,8 @@ class CategoricalDQNAgent(Agent):
     def __init__(self, env_name, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
-        min_q_value = -10
-        max_q_value = 10
+        min_q_value = 0
+        max_q_value = 51
         self._n_atoms = 51
         self._support = tf.linspace(min_q_value, max_q_value, self._n_atoms)
         self._support = tf.cast(self._support, tf.float32)
@@ -155,7 +155,8 @@ class CategoricalDQNAgent(Agent):
         if self._data is None:
             self._model = models.get_mlp(self._input_shape, cat_n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
-            self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
+            # self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
+            self._collect_until_items_created(epsilon=1, n_items=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
             self._model = models.get_mlp(self._input_shape, cat_n_outputs)
@@ -169,6 +170,9 @@ class CategoricalDQNAgent(Agent):
             self._model = models.get_sparse(random_weights, self._data['mask'])
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
+
+        reward = self._evaluate_episodes_greedy(num_episodes=100)
+        print(f"Initial reward with a model policy is {reward}")
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:

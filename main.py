@@ -70,6 +70,7 @@ def multi_call(env_name, agent_name, data, make_sparse, plot=False):
         weights_list.append(weights)
         mask_list.append(mask)
         rewards[count] = reward
+        print(f"Proc #{count}: reward = {reward}")
         if plot:
             misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
             misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
@@ -96,4 +97,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(cart_pole, 'regular', init_data, make_sparse=False)
+    multi_call(goose, 'categorical', init_data, make_sparse=False)

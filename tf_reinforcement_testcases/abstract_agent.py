@@ -119,6 +119,13 @@ class Agent(abc.ABC):
         for i in range(n_episodes):
             self._collect_trajectories_from_episode(epsilon)
 
+    def _collect_until_items_created(self, epsilon, n_items):
+        # collect more exp if we do not have enough for a batch
+        items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
+        while items_created < n_items:
+            self._collect_trajectories_from_episode(epsilon)
+            items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
+
     def _prepare_td_arguments(self, actions, observations, rewards, dones):
         exponents = tf.expand_dims(tf.range(self._n_steps - 1, dtype=tf.float32), axis=1)
         gammas = tf.fill([self._n_steps - 1, 1], self._discount_rate.numpy())
@@ -176,6 +183,8 @@ class Agent(abc.ABC):
 
             # store weights at the last step
             if step_counter % iterations_number == 0:
+                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=100)
+                print(f"Final reward with a model policy is {mean_episode_reward}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
                 if self._is_sparse:
