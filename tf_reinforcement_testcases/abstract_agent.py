@@ -94,7 +94,7 @@ class Agent(abc.ABC):
         for a regular TD(0) update an item should have 2 time steps.
         One 'time step' contains (action, obs, reward, done);
         action, reward, done are for the current observation (or obs);
-        e.g. action led to obs, reward prior to obs, if is it done at the current obs.
+        e.g. action led to the obs, reward prior the obs, if is it done at the current obs.
         """
         start_itemizing = self._n_steps - 2
         with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
