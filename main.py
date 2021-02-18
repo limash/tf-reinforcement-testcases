@@ -1,13 +1,18 @@
-import os
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # to disable tf messages
+# import os
+#
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # to disable tf messages
 
 import pickle
 
 import ray
 import numpy as np
+import tensorflow as tf
 
 from tf_reinforcement_testcases import deep_q_learning, actor_critic, storage, misc
+
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+if len(physical_devices) > 0:
+    config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
@@ -36,7 +41,7 @@ def one_call(env_name, agent_name, data, make_sparse):
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          n_steps,
                          data, make_sparse)
-    weights, mask, reward = agent.train(iterations_number=2000)
+    weights, mask, reward = agent.train(iterations_number=2000, epsilon=1.)
 
     data = {
         'weights': weights,
@@ -90,6 +95,7 @@ def multi_call(env_name, agent_name, data, make_sparse, plot=False):
 if __name__ == '__main__':
     cart_pole = 'CartPole-v1'
     goose = 'gym_goose:goose-v0'
+    breakout = 'BreakoutNoFrameskip-v4'
 
     try:
         with open('data/data.pickle', 'rb') as file:
@@ -97,4 +103,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(goose, 'categorical', init_data, make_sparse=False)
+    one_call(breakout, 'regular', init_data, make_sparse=False)

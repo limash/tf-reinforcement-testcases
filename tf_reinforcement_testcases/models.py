@@ -1,5 +1,83 @@
 # move all imports inside functions to use ray.remote multitasking
 
+def mlp_layer(x):
+    from tensorflow import keras
+    import tensorflow.keras.layers as layers
+
+    # initializer = "he_normal"
+    initializer = keras.initializers.VarianceScaling(
+        scale=2.0, mode='fan_in', distribution='truncated_normal')
+
+    x = layers.Dense(512, kernel_initializer=initializer)(x)
+    # x = layers.Dense(1000, kernel_initializer=initializer,
+    #                  kernel_regularizer=keras.regularizers.l2(0.01),
+    #                  use_bias=False)(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+    # # x = layers.ReLU()(x)
+
+    # x = layers.Dense(500, kernel_initializer=initializer,
+    #                  kernel_regularizer=keras.regularizers.l2(0.01),
+    #                  use_bias=False)(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+    # # x = layers.ReLU()(x)
+
+    return x
+
+
+def conv_layer(x):
+    import tensorflow.keras.layers as layers
+    from tensorflow import keras
+
+    initializer = keras.initializers.VarianceScaling(
+        scale=2.0, mode='fan_in', distribution='truncated_normal')
+
+    x = layers.Conv2D(32, (8, 8), kernel_initializer=initializer, strides=4)(x)
+    x = layers.Conv2D(64, (4, 4), kernel_initializer=initializer, strides=2)(x)
+    x = layers.Conv2D(64, (3, 3), kernel_initializer=initializer, strides=1)(x)
+
+    # x = layers.Conv2D(64, 5, kernel_initializer=initializer, padding='same')(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+    # x = layers.Conv2D(64, 3, kernel_initializer=initializer, padding='valid')(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+    # x = layers.Conv2D(128, 3, kernel_initializer=initializer, padding='valid')(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+    # x = layers.Conv2D(128, 3, kernel_initializer=initializer, padding='valid')(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+
+    return x
+
+
+def get_conv_channels_first(input_shape, n_outputs):
+    from tensorflow import keras
+    import tensorflow.keras.layers as layers
+
+    keras.backend.set_image_data_format('channels_first')
+
+    # this initialization in the last layer decreases variance in the last layer
+    initializer = keras.initializers.random_uniform(minval=-0.03, maxval=0.03)
+
+    # create inputs
+    inputs = layers.Input(shape=input_shape, name="feature_maps")
+    # inputs = tf.transpose(inputs, [0, 2, 3, 1])
+    # feature maps
+    conv_output = conv_layer(inputs)
+    flatten_conv_output = layers.Flatten()(conv_output)
+    # concatenate inputs
+    # mlp
+    x = mlp_layer(flatten_conv_output)
+    outputs = layers.Dense(n_outputs, kernel_initializer=initializer)(x)
+
+    model = keras.Model(inputs=[inputs], outputs=[outputs])
+
+    return model
+
+
 def get_mlp(input_shape, n_outputs):
     from tensorflow import keras
     import tensorflow.keras.layers as layers

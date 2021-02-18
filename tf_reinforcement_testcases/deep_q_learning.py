@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from tf_reinforcement_testcases import models, misc
+from tf_reinforcement_testcases import misc, models
 from tf_reinforcement_testcases.abstract_agent import Agent
 
 
@@ -12,12 +12,12 @@ class RegularDQNAgent(Agent):
 
         # train a model from scratch
         if self._data is None:
-            self._model = models.get_mlp(self._input_shape, self._n_outputs)
+            self._model = self.NETWORKS[env_name](self._input_shape, self._n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = models.get_mlp(self._input_shape, self._n_outputs)
+            self._model = self.NETWORKS(self._input_shape, self._n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
             self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
@@ -62,7 +62,7 @@ class FixedQValuesDQNAgent(RegularDQNAgent):
             # replace weights of the target model with a weights from the model
             self._target_model.set_weights(self._model.get_weights())
         else:
-            self._target_model = models.get_mlp(self._input_shape, self._n_outputs)
+            self._target_model = self.NETWORKS(self._input_shape, self._n_outputs)
             self._target_model.set_weights(self._model.get_weights())
 
     @tf.function
@@ -153,13 +153,13 @@ class CategoricalDQNAgent(Agent):
         cat_n_outputs = self._n_outputs * self._n_atoms
         # train a model from scratch
         if self._data is None:
-            self._model = models.get_mlp(self._input_shape, cat_n_outputs)
+            self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             # self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
             self._collect_until_items_created(epsilon=1, n_items=self._sample_batch_size)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = models.get_mlp(self._input_shape, cat_n_outputs)
+            self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
             self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)

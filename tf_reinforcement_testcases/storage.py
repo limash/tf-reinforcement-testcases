@@ -7,13 +7,13 @@ def initialize_dataset(server_port, table_name, observations_shape, batch_size, 
     """
     batch_size in fact equals min size of a buffer
     """
-    # if there are many dimensions assume halite
-    if len(observations_shape) > 1:
-        maps_shape = tf.TensorShape(observations_shape[0])
-        scalars_shape = tf.TensorShape(observations_shape[1])
-        observations_shape = (maps_shape, scalars_shape)
-    else:
-        observations_shape = tf.nest.map_structure(lambda x: tf.TensorShape(x), observations_shape)
+    # if len(observations_shape) > 1:
+    #     # maps_shape = tf.TensorShape(observations_shape[0])
+    #     # scalars_shape = tf.TensorShape(observations_shape[1])
+    #     # observations_shape = (maps_shape, scalars_shape)
+    # else:
+    #     observations_shape = tf.nest.map_structure(lambda x: tf.TensorShape(x), observations_shape)
+    observations_shape = tf.TensorShape(observations_shape)
 
     actions_shape = tf.TensorShape([])
     rewards_shape = tf.TensorShape([])
@@ -37,7 +37,7 @@ def initialize_dataset(server_port, table_name, observations_shape, batch_size, 
 class UniformBuffer:
     def __init__(self,
                  min_size: int = 64,
-                 max_size: int = 40000):
+                 max_size: int = 200000):
 
         self._min_size = min_size
         self._table_name = 'uniform_table'
@@ -69,7 +69,7 @@ class UniformBuffer:
 class PriorityBuffer:
     def __init__(self,
                  min_size: int = 64,
-                 max_size: int = 40000):
+                 max_size: int = 200000):
         self._min_size = min_size
         self._table_name = 'priority_table'
         self._server = reverb.Server(

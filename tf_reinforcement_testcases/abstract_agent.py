@@ -5,12 +5,17 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import gym
+import gym.wrappers as gw
 import reverb
 
-from tf_reinforcement_testcases import storage
+from tf_reinforcement_testcases import storage, models
 
 
 class Agent(abc.ABC):
+
+    NETWORKS = {'CartPole-v1': models.get_mlp,
+                'BreakoutNoFrameskip-v4': models.get_conv_channels_first
+                }
 
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
@@ -19,6 +24,17 @@ class Agent(abc.ABC):
         # environments; their hyperparameters
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
+        if env_name == 'BreakoutNoFrameskip-v4':
+            self._train_env = gw.FrameStack(
+                gw.TimeLimit(
+                    gw.AtariPreprocessing(self._train_env),
+                    max_episode_steps=10000),
+                4)
+            self._eval_env = gw.FrameStack(
+                gw.TimeLimit(
+                    gw.AtariPreprocessing(self._eval_env),
+                    max_episode_steps=10000),
+                4)
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
 
@@ -32,7 +48,7 @@ class Agent(abc.ABC):
         self._target_model = None
 
         # fraction of random exp sampling
-        self._epsilon = 0.1
+        self._epsilon = None
 
         # hyperparameters for optimization
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
@@ -44,8 +60,9 @@ class Agent(abc.ABC):
         self._replay_memory_client = reverb.Client(f'localhost:{buffer_server_port}')
         # make a batch size equal of a minimal size of a buffer
         self._sample_batch_size = buffer_min_size
-        self._n_steps = n_steps  # 1. amount of steps stored per item, it should be at least 2;
-        # 2. for details see function _collect_trajectories_from_episode()
+        # N_steps - amount of steps stored per item, it should be at least 2;
+        # for details see function _collect_trajectories_from_episode()
+        self._n_steps = n_steps
         # initialize a dataset to be used to sample data from a server
         self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
                                                    self._input_shape, self._sample_batch_size, self._n_steps)
@@ -143,10 +160,11 @@ class Agent(abc.ABC):
     def _training_step(self, actions, observations, rewards, dones, info):
         raise NotImplementedError
 
-    def train(self, iterations_number=10000):
+    def train(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 100
-        target_model_update_interval = 100
+        eval_interval = 1000
+        target_model_update_interval = 1000
+        self._epsilon = epsilon
 
         weights = None
         mask = None
@@ -167,6 +185,8 @@ class Agent(abc.ABC):
             self._items_sampled += self._sample_batch_size
 
             self._training_step(*experiences, info=info)
+            print(f"\rIteration:{step_counter}; Items sampled:{self._items_sampled}; Items created:{items_created}",
+                  end="")
 
             if step_counter % eval_interval == 0:
                 mean_episode_reward = self._evaluate_episodes_greedy()
@@ -183,7 +203,7 @@ class Agent(abc.ABC):
 
             # store weights at the last step
             if step_counter % iterations_number == 0:
-                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=100)
+                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
                 print(f"Final reward with a model policy is {mean_episode_reward}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
