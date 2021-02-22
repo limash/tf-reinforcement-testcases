@@ -64,9 +64,12 @@ def get_conv_channels_first(input_shape, n_outputs):
 
     # create inputs
     inputs = layers.Input(shape=input_shape, name="feature_maps")
-    # inputs = tf.transpose(inputs, [0, 2, 3, 1])
+    # preprocessing
+    normalization_layer = keras.layers.Lambda(lambda obs: obs / 255.)
+    # channels_last_layer = keras.layers.Lambda(lambda obs: tf.transpose(obs, [1, 2, 0]))  # chw to hwc
+    preprocessed = normalization_layer(inputs)
     # feature maps
-    conv_output = conv_layer(inputs)
+    conv_output = conv_layer(preprocessed)
     flatten_conv_output = layers.Flatten()(conv_output)
     # concatenate inputs
     # mlp

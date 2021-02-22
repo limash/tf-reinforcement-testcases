@@ -1,4 +1,5 @@
 import abc
+import time
 import itertools as it
 
 import numpy as np
@@ -20,7 +21,8 @@ class Agent(abc.ABC):
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
                  n_steps=2,
-                 data=None, make_sparse=False):
+                 data=None, make_sparse=False,
+                 init_epsilon=0.1):
         # environments; their hyperparameters
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
@@ -28,12 +30,12 @@ class Agent(abc.ABC):
             self._train_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._train_env),
-                    max_episode_steps=10000),
+                    max_episode_steps=1000),
                 4)
             self._eval_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._eval_env),
-                    max_episode_steps=10000),
+                    max_episode_steps=1000),
                 4)
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
@@ -48,7 +50,7 @@ class Agent(abc.ABC):
         self._target_model = None
 
         # fraction of random exp sampling
-        self._epsilon = None
+        self._epsilon = init_epsilon
 
         # hyperparameters for optimization
         self._optimizer = keras.optimizers.Adam(lr=1e-3)
@@ -89,19 +91,24 @@ class Agent(abc.ABC):
         """
         obs = self._eval_env.reset()
         rewards = 0
-        while True:
+        # while True:
+        for step in it.count(0):
             # if epsilon=0, greedy is disabled
             action = self._epsilon_greedy_policy(obs, epsilon)
             obs, reward, done, info = self._eval_env.step(action)
             rewards += reward
             if done:
                 break
-        return rewards
+        return rewards, step
 
     def _evaluate_episodes_greedy(self, num_episodes=3):
         episode_rewards = 0
-        for _ in range(num_episodes):
-            episode_rewards += self._evaluate_episode()
+        for i in range(num_episodes):
+            t1 = time.time()
+            rewards, steps = self._evaluate_episode()
+            t2 = time.time()
+            print(f"Evaluation. Episode: {i}; Episode reward: {rewards}; Steps: {steps}; Time: {t2-t1}")
+            episode_rewards += rewards
         return episode_rewards / num_episodes
 
     def _collect_trajectories_from_episode(self, epsilon):
@@ -164,7 +171,11 @@ class Agent(abc.ABC):
 
         eval_interval = 1000
         target_model_update_interval = 1000
-        self._epsilon = epsilon
+        # self._epsilon = epsilon
+        epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=epsilon,  # initial ε
+            decay_steps=250000 // 4,  # <=> 1,000,000 ALE frames
+            end_learning_rate=0.01)  # final ε
 
         weights = None
         mask = None
@@ -174,7 +185,9 @@ class Agent(abc.ABC):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
-            if items_created < self._items_sampled:
+            # train 4 times more than collecting new experience
+            if items_created*4 < self._items_sampled:
+                self._epsilon = epsilon_fn(step_counter)
                 self._collect_trajectories_from_episode(self._epsilon)
 
             # dm-reverb returns tensors
@@ -185,16 +198,13 @@ class Agent(abc.ABC):
             self._items_sampled += self._sample_batch_size
 
             self._training_step(*experiences, info=info)
-            print(f"\rIteration:{step_counter}; Items sampled:{self._items_sampled}; Items created:{items_created}",
-                  end="")
+            print(f"\rTraining. Iteration:{step_counter}; "
+                  f"Items sampled:{self._items_sampled}; Items created:{items_created}", end="")
 
             if step_counter % eval_interval == 0:
+                print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
-                print("\rTraining step: {}, reward: {}, eps: {:.3f}".format(step_counter,
-                                                                            mean_episode_reward,
-                                                                            self._epsilon))
-                print(f"Created items count: {items_created}")
-                print(f"Sampled items count: {self._items_sampled}")
+                print(f"Evaluation: Reward: {mean_episode_reward}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
@@ -203,8 +213,9 @@ class Agent(abc.ABC):
 
             # store weights at the last step
             if step_counter % iterations_number == 0:
-                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
+                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=3)
                 print(f"Final reward with a model policy is {mean_episode_reward}")
+                print(f"Final epsilon is {self._epsilon}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
                 if self._is_sparse:

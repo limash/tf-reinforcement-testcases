@@ -34,14 +34,17 @@ BUFFERS = {"regular": storage.UniformBuffer,
 def one_call(env_name, agent_name, data, make_sparse):
     batch_size = 64
     n_steps = 2
+    eps = 1.
+
     buffer = BUFFERS[agent_name](min_size=batch_size)
 
     agent_object = AGENTS[agent_name]
     agent = agent_object(env_name,
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          n_steps,
-                         data, make_sparse)
-    weights, mask, reward = agent.train(iterations_number=2000, epsilon=1.)
+                         data, make_sparse,
+                         init_epsilon=eps)
+    weights, mask, reward = agent.train(iterations_number=10000, epsilon=eps)
 
     data = {
         'weights': weights,
@@ -103,4 +106,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    one_call(breakout, 'regular', init_data, make_sparse=False)
+    one_call(breakout, 'double', init_data, make_sparse=False)
