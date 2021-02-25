@@ -109,7 +109,7 @@ class Agent(abc.ABC):
             t1 = time.time()
             rewards, steps = self._evaluate_episode()
             t2 = time.time()
-            print(f"Evaluation. Episode: {i}; Episode reward: {rewards}; Steps: {steps}; Time: {t2-t1}")
+            # print(f"Evaluation. Episode: {i}; Episode reward: {rewards}; Steps: {steps}; Time: {t2-t1}")
             episode_rewards += rewards
         return episode_rewards / num_episodes
 
@@ -200,14 +200,17 @@ class Agent(abc.ABC):
             self._items_sampled += self._sample_batch_size
 
             self._training_step(*experiences, info=info)
-            print(f"\rTraining. Iteration:{step_counter}; "
-                  f"Items sampled:{self._items_sampled}; Items created:{items_created}", end="")
+            # print(f"\rTraining. Iteration:{step_counter}; "
+            #       f"Items sampled:{self._items_sampled}; Items created:{items_created}", end="")
 
             if step_counter % eval_interval == 0:
-                print("\r")
+                # print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
-                print(f"Evaluation: Reward: {mean_episode_reward}")
-                print(f"Epsilon is {self._epsilon}")
+                print(f"Iteration:{step_counter}; "
+                      f"Items sampled:{self._items_sampled}; "
+                      f"Items created:{items_created}; "
+                      f"Reward: {mean_episode_reward}; "
+                      f"Epsilon: {self._epsilon}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:

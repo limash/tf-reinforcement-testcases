@@ -4,6 +4,10 @@ import tensorflow as tf
 from tf_reinforcement_testcases.abstract_agent import Agent
 from tf_reinforcement_testcases import models
 
+physical_devices = tf.config.list_physical_devices('GPU')
+if len(physical_devices) > 0:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
 
 class ACAgent(Agent):
 
