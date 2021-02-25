@@ -4,7 +4,6 @@ import itertools as it
 
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 import gym
 import gym.wrappers as gw
 import reverb
@@ -53,8 +52,11 @@ class Agent(abc.ABC):
         self._epsilon = init_epsilon
 
         # hyperparameters for optimization
-        self._optimizer = keras.optimizers.Adam(lr=1e-3)
-        self._loss_fn = keras.losses.mean_squared_error
+        # self._optimizer = tf.keras.optimizers.Adam(lr=1e-3)
+        self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
+                                                      epsilon=0.00001, centered=True)
+        # self._loss_fn = tf.keras.losses.mean_squared_error
+        self._loss_fn = tf.keras.losses.Huber(reduction="none")
 
         # buffer; hyperparameters for a reward calculation
         self._table_name = buffer_table_name
@@ -69,7 +71,7 @@ class Agent(abc.ABC):
         self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
                                                    self._input_shape, self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
-        self._discount_rate = tf.constant(0.95, dtype=tf.float32)
+        self._discount_rate = tf.constant(0.99, dtype=tf.float32)
         self._items_sampled = 0
 
     @tf.function
@@ -174,7 +176,7 @@ class Agent(abc.ABC):
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
-            decay_steps=250000 // 4,  # <=> 1,000,000 ALE frames
+            decay_steps=250000 // 4,
             end_learning_rate=0.01)  # final ε
 
         weights = None
@@ -185,8 +187,8 @@ class Agent(abc.ABC):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
-            # train 4 times more than collecting new experience
-            if items_created*4 < self._items_sampled:
+            # train 10 times more than collecting new experience
+            if items_created*10 < self._items_sampled:
                 self._epsilon = epsilon_fn(step_counter)
                 self._collect_trajectories_from_episode(self._epsilon)
 
@@ -205,6 +207,7 @@ class Agent(abc.ABC):
                 print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print(f"Evaluation: Reward: {mean_episode_reward}")
+                print(f"Epsilon is {self._epsilon}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
@@ -213,9 +216,9 @@ class Agent(abc.ABC):
 
             # store weights at the last step
             if step_counter % iterations_number == 0:
-                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=3)
-                print(f"Final reward with a model policy is {mean_episode_reward}")
-                print(f"Final epsilon is {self._epsilon}")
+                # mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
+                # print(f"Final reward with a model policy is {mean_episode_reward}")
+                # print(f"Final epsilon is {self._epsilon}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
                 if self._is_sparse:

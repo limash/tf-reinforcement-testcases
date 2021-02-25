@@ -37,7 +37,7 @@ def initialize_dataset(server_port, table_name, observations_shape, batch_size, 
 class UniformBuffer:
     def __init__(self,
                  min_size: int = 64,
-                 max_size: int = 200000):
+                 max_size: int = 100000):
 
         self._min_size = min_size
         self._table_name = 'uniform_table'
@@ -69,7 +69,7 @@ class UniformBuffer:
 class PriorityBuffer:
     def __init__(self,
                  min_size: int = 64,
-                 max_size: int = 200000):
+                 max_size: int = 100000):
         self._min_size = min_size
         self._table_name = 'priority_table'
         self._server = reverb.Server(

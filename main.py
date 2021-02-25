@@ -10,10 +10,6 @@ import tensorflow as tf
 
 from tf_reinforcement_testcases import deep_q_learning, actor_critic, storage, misc
 
-physical_devices = tf.config.experimental.list_physical_devices('GPU')
-if len(physical_devices) > 0:
-    config = tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
           "double": deep_q_learning.DoubleDQNAgent,
@@ -32,9 +28,15 @@ BUFFERS = {"regular": storage.UniformBuffer,
 
 
 def one_call(env_name, agent_name, data, make_sparse):
+
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_devices) > 0:
+        tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
     batch_size = 64
     n_steps = 2
-    eps = 1.
+    init_sample_eps = 1.  # 1 means random sampling
+    eps = .5  # start for polynomial decay eps schedule, it should be real (double)
 
     buffer = BUFFERS[agent_name](min_size=batch_size)
 
@@ -43,7 +45,7 @@ def one_call(env_name, agent_name, data, make_sparse):
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          n_steps,
                          data, make_sparse,
-                         init_epsilon=eps)
+                         init_epsilon=init_sample_eps)
     weights, mask, reward = agent.train(iterations_number=10000, epsilon=eps)
 
     data = {
@@ -57,19 +59,38 @@ def one_call(env_name, agent_name, data, make_sparse):
 
 
 def multi_call(env_name, agent_name, data, make_sparse, plot=False):
-    ray.init()
-    parallel_calls = 10
+
+    parallel_calls = 2
+
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
+        try:
+            tf.config.experimental.set_virtual_device_configuration(
+                gpus[0],
+                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024) for _ in range(parallel_calls)])
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Virtual devices must be set before GPUs have been initialized
+            print(e)
+
+    ray.init(num_cpus=parallel_calls, num_gpus=1)
+
     batch_size = 64
     n_steps = 2
+    init_sample_eps = 1.  # 1 means random sampling
+    eps = .5  # start for polynomial decay eps schedule, it should be real (double)
+
     buffer = BUFFERS[agent_name](min_size=batch_size)
 
     agent_object = AGENTS[agent_name]
-    agent_object = ray.remote(agent_object)
+    agent_object = ray.remote(num_gpus=1/parallel_calls)(agent_object)
     agents = [agent_object.remote(env_name,
                                   buffer.table_name, buffer.server_port, buffer.min_size,
-                                  n_steps,
-                                  data, make_sparse) for _ in range(parallel_calls)]
-    futures = [agent.train.remote(iterations_number=2000) for agent in agents]
+                                  n_steps, data, make_sparse,
+                                  init_epsilon=init_sample_eps) for _ in range(parallel_calls)]
+    futures = [agent.train.remote(iterations_number=10000, epsilon=eps) for agent in agents]
     outputs = ray.get(futures)
 
     rewards = np.empty(parallel_calls)
