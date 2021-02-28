@@ -25,23 +25,26 @@ BUFFERS = {"regular": storage.UniformBuffer,
            "priority_categorical": storage.PriorityBuffer,
            "actor_critic": storage.UniformBuffer}
 
+BATCH_SIZE = 64
+BUFFER_SIZE = 100000
+N_STEPS = 2  # 2 steps is a regular TD(0)
+
+INIT_SAMPLE_EPS = 0.3  # 1 means random sampling, for sampling before training
+INIT_N_SAMPLES = 10000
+
+EPS = 0.1  # start for polynomial decay eps schedule, it should be real (double)
+
 
 def one_call(env_name, agent_name, data, make_sparse):
 
-    batch_size = 64
-    n_steps = 2
-    init_sample_eps = 1.  # 1 means random sampling
-    eps = .5  # start for polynomial decay eps schedule, it should be real (double)
-
-    buffer = BUFFERS[agent_name](min_size=batch_size)
+    buffer = BUFFERS[agent_name](min_size=BATCH_SIZE, max_size=BUFFER_SIZE)
 
     agent_object = AGENTS[agent_name]
-    agent = agent_object(env_name,
+    agent = agent_object(env_name, INIT_N_SAMPLES,
                          buffer.table_name, buffer.server_port, buffer.min_size,
-                         n_steps,
-                         data, make_sparse,
-                         init_epsilon=init_sample_eps)
-    weights, mask, reward = agent.train(iterations_number=10000, epsilon=eps)
+                         N_STEPS, INIT_SAMPLE_EPS,
+                         data, make_sparse)
+    weights, mask, reward = agent.train_collect(iterations_number=10000, epsilon=EPS)
 
     data = {
         'weights': weights,
@@ -55,23 +58,18 @@ def one_call(env_name, agent_name, data, make_sparse):
 
 def multi_call(env_name, agent_name, data, make_sparse, plot=False):
 
-    parallel_calls = 5
+    parallel_calls = 4
     ray.init(num_cpus=parallel_calls, num_gpus=1)
 
-    batch_size = 64
-    n_steps = 2
-    init_sample_eps = 1.  # 1 means random sampling
-    eps = .9  # start for polynomial decay eps schedule, it should be real (double)
-
-    buffer = BUFFERS[agent_name](min_size=batch_size)
+    buffer = BUFFERS[agent_name](min_size=BATCH_SIZE)
 
     agent_object = AGENTS[agent_name]
     agent_object = ray.remote(num_gpus=1/parallel_calls)(agent_object)
-    agents = [agent_object.remote(env_name,
+    agents = [agent_object.remote(env_name, INIT_N_SAMPLES,
                                   buffer.table_name, buffer.server_port, buffer.min_size,
-                                  n_steps, data, make_sparse,
-                                  init_epsilon=init_sample_eps) for _ in range(parallel_calls)]
-    futures = [agent.train.remote(iterations_number=10000, epsilon=eps) for agent in agents]
+                                  N_STEPS, INIT_SAMPLE_EPS,
+                                  data, make_sparse) for _ in range(parallel_calls)]
+    futures = [agent.train_collect.remote(iterations_number=50000, epsilon=EPS) for agent in agents]
     outputs = ray.get(futures)
 
     rewards = np.empty(parallel_calls)

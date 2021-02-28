@@ -1,5 +1,5 @@
 import abc
-import time
+# import time
 import itertools as it
 
 import numpy as np
@@ -12,23 +12,26 @@ from tf_reinforcement_testcases import storage, models
 
 
 class Agent(abc.ABC):
-
     NETWORKS = {'CartPole-v1': models.get_mlp,
                 'BreakoutNoFrameskip-v4': models.get_conv_channels_first
                 }
+    OBS_DTYPES = {'CartPole-v1': tf.float32,
+                  'BreakoutNoFrameskip-v4': tf.uint8
+                  }
 
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
-                 n_steps=2,
-                 data=None, make_sparse=False,
-                 init_epsilon=0.1):
+                 n_steps, init_epsilon,
+                 data=None, make_sparse=False
+                 ):
         # environments; their hyperparameters
+        self._env_name = env_name
         self._train_env = gym.make(env_name)
         self._eval_env = gym.make(env_name)
         if env_name == 'BreakoutNoFrameskip-v4':
             self._train_env = gw.FrameStack(
                 gw.TimeLimit(
-                    gw.AtariPreprocessing(self._train_env),
+                    gw.AtariPreprocessing(self._train_env),  # includes frameskip 4
                     max_episode_steps=1000),
                 4)
             self._eval_env = gw.FrameStack(
@@ -53,10 +56,11 @@ class Agent(abc.ABC):
 
         # hyperparameters for optimization
         # self._optimizer = tf.keras.optimizers.Adam(lr=1e-3)
-        self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
-                                                      epsilon=0.00001, centered=True)
+        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
+        # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
+        #                                               epsilon=0.00001, centered=True)
         # self._loss_fn = tf.keras.losses.mean_squared_error
-        self._loss_fn = tf.keras.losses.Huber(reduction="none")
+        self._loss_fn = tf.keras.losses.Huber()
 
         # buffer; hyperparameters for a reward calculation
         self._table_name = buffer_table_name
@@ -68,8 +72,10 @@ class Agent(abc.ABC):
         # for details see function _collect_trajectories_from_episode()
         self._n_steps = n_steps
         # initialize a dataset to be used to sample data from a server
+        # todo: it takes a lot of memory, so it can be useful to separate samplers from trainers in some cases
         self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
-                                                   self._input_shape, self._sample_batch_size, self._n_steps)
+                                                   self._input_shape, self.OBS_DTYPES[env_name],
+                                                   self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
         self._discount_rate = tf.constant(0.99, dtype=tf.float32)
         self._items_sampled = 0
@@ -83,7 +89,6 @@ class Agent(abc.ABC):
             return np.random.randint(self._n_outputs)
         else:
             obs = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), obs)
-            # Q_values = self._model(obs)
             Q_values = self._predict(obs)
             return np.argmax(Q_values[0])
 
@@ -106,9 +111,9 @@ class Agent(abc.ABC):
     def _evaluate_episodes_greedy(self, num_episodes=3):
         episode_rewards = 0
         for i in range(num_episodes):
-            t1 = time.time()
+            # t1 = time.time()
             rewards, steps = self._evaluate_episode()
-            t2 = time.time()
+            # t2 = time.time()
             # print(f"Evaluation. Episode: {i}; Episode reward: {rewards}; Steps: {steps}; Time: {t2-t1}")
             episode_rewards += rewards
         return episode_rewards / num_episodes
@@ -126,7 +131,7 @@ class Agent(abc.ABC):
         with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
             obs = self._train_env.reset()
             action, reward, done = tf.constant(-1), tf.constant(0.), tf.constant(0.)
-            obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
+            obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=self.OBS_DTYPES[self._env_name]), obs)
             writer.append((action, obs, reward, done))
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
@@ -134,7 +139,9 @@ class Agent(abc.ABC):
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
                 reward = tf.convert_to_tensor(reward, dtype=tf.float32)
                 done = tf.convert_to_tensor(done, dtype=tf.float32)
-                obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=tf.float32), obs)
+                obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x,
+                                                                           dtype=self.OBS_DTYPES[self._env_name]),
+                                            obs)
                 writer.append((action, obs, reward, done))
                 if step >= start_itemizing:
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
@@ -169,26 +176,26 @@ class Agent(abc.ABC):
     def _training_step(self, actions, observations, rewards, dones, info):
         raise NotImplementedError
 
-    def train(self, iterations_number=10000, epsilon=0.1):
+    def train_collect(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 1000
-        target_model_update_interval = 1000
+        eval_interval = 2000
+        target_model_update_interval = 2000
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
-            decay_steps=250000 // 4,
-            end_learning_rate=0.01)  # final ε
+            decay_steps=60000,
+            end_learning_rate=0.1)  # final ε
 
         weights = None
         mask = None
         mean_episode_reward = 0
 
-        for step_counter in range(1, iterations_number+1):
+        for step_counter in range(1, iterations_number + 1):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
             # train 10 times more than collecting new experience
-            if items_created*10 < self._items_sampled:
+            if items_created * 10 < self._items_sampled:
                 self._epsilon = epsilon_fn(step_counter)
                 self._collect_trajectories_from_episode(self._epsilon)
 
@@ -206,11 +213,11 @@ class Agent(abc.ABC):
             if step_counter % eval_interval == 0:
                 # print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
-                print(f"Iteration:{step_counter}; "
-                      f"Items sampled:{self._items_sampled}; "
-                      f"Items created:{items_created}; "
-                      f"Reward: {mean_episode_reward}; "
-                      f"Epsilon: {self._epsilon}")
+                print(f"Iteration:{step_counter:.2f}; "
+                      f"Items sampled:{self._items_sampled:.2f}; "
+                      f"Items created:{items_created:.2f}; "
+                      f"Reward: {mean_episode_reward:.2f}; "
+                      f"Epsilon: {self._epsilon:.2f}")
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:

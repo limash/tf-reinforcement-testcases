@@ -11,7 +11,7 @@ if len(physical_devices) > 0:
 
 class RegularDQNAgent(Agent):
 
-    def __init__(self, env_name, *args, **kwargs):
+    def __init__(self, env_name, init_n_samples, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
         # train a model from scratch
@@ -19,14 +19,14 @@ class RegularDQNAgent(Agent):
             self._model = self.NETWORKS[env_name](self._input_shape, self._n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             # self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
-            self._collect_until_items_created(epsilon=self._epsilon, n_items=20000)
+            self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
         # continue a model training
         elif self._data and not self._is_sparse:
             self._model = self.NETWORKS[env_name](self._input_shape, self._n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
             # self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
-            self._collect_until_items_created(epsilon=self._epsilon, n_items=20000)
+            self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
         # make and train a sparse model from a dense model
         elif self._data and self._is_sparse:
             weights = self._data['weights']

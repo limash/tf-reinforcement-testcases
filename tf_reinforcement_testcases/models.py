@@ -8,7 +8,7 @@ def mlp_layer(x):
     initializer = keras.initializers.VarianceScaling(
         scale=2.0, mode='fan_in', distribution='truncated_normal')
 
-    x = layers.Dense(512, kernel_initializer=initializer)(x)
+    x = layers.Dense(512, kernel_initializer=initializer, activation='relu')(x)
     # x = layers.Dense(1000, kernel_initializer=initializer,
     #                  kernel_regularizer=keras.regularizers.l2(0.01),
     #                  use_bias=False)(x)
@@ -33,9 +33,9 @@ def conv_layer(x):
     initializer = keras.initializers.VarianceScaling(
         scale=2.0, mode='fan_in', distribution='truncated_normal')
 
-    x = layers.Conv2D(32, (8, 8), kernel_initializer=initializer, strides=4)(x)
-    x = layers.Conv2D(64, (4, 4), kernel_initializer=initializer, strides=2)(x)
-    x = layers.Conv2D(64, (3, 3), kernel_initializer=initializer, strides=1)(x)
+    x = layers.Conv2D(32, 8, kernel_initializer=initializer, strides=4, activation='relu')(x)
+    x = layers.Conv2D(64, 4, kernel_initializer=initializer, strides=2, activation='relu')(x)
+    x = layers.Conv2D(64, 3, kernel_initializer=initializer, strides=1, activation='relu')(x)
 
     # x = layers.Conv2D(64, 5, kernel_initializer=initializer, padding='same')(x)
     # x = layers.BatchNormalization()(x)
@@ -54,6 +54,7 @@ def conv_layer(x):
 
 
 def get_conv_channels_first(input_shape, n_outputs):
+    import tensorflow as tf
     from tensorflow import keras
     import tensorflow.keras.layers as layers
 
@@ -63,9 +64,9 @@ def get_conv_channels_first(input_shape, n_outputs):
     initializer = keras.initializers.random_uniform(minval=-0.03, maxval=0.03)
 
     # create inputs
-    inputs = layers.Input(shape=input_shape, name="feature_maps")
+    inputs = layers.Input(shape=input_shape, name="feature_maps", dtype=tf.uint8)
     # preprocessing
-    normalization_layer = keras.layers.Lambda(lambda obs: obs / 255.)
+    normalization_layer = keras.layers.Lambda(lambda obs: tf.cast(obs, tf.float32) / 255.)
     # channels_last_layer = keras.layers.Lambda(lambda obs: tf.transpose(obs, [1, 2, 0]))  # chw to hwc
     preprocessed = normalization_layer(inputs)
     # feature maps
