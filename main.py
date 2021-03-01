@@ -29,10 +29,10 @@ BATCH_SIZE = 64
 BUFFER_SIZE = 100000
 N_STEPS = 2  # 2 steps is a regular TD(0)
 
-INIT_SAMPLE_EPS = 0.3  # 1 means random sampling, for sampling before training
-INIT_N_SAMPLES = 10000
+INIT_SAMPLE_EPS = .1  # 1 means random sampling, for sampling before training
+INIT_N_SAMPLES = 100000
 
-EPS = 0.1  # start for polynomial decay eps schedule, it should be real (double)
+EPS = .1  # start for polynomial decay eps schedule, it should be real (double)
 
 
 def one_call(env_name, agent_name, data, make_sparse):
@@ -69,7 +69,7 @@ def multi_call(env_name, agent_name, data, make_sparse, plot=False):
                                   buffer.table_name, buffer.server_port, buffer.min_size,
                                   N_STEPS, INIT_SAMPLE_EPS,
                                   data, make_sparse) for _ in range(parallel_calls)]
-    futures = [agent.train_collect.remote(iterations_number=50000, epsilon=EPS) for agent in agents]
+    futures = [agent.train_collect.remote(iterations_number=60000, epsilon=EPS) for agent in agents]
     outputs = ray.get(futures)
 
     rewards = np.empty(parallel_calls)
@@ -106,4 +106,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_data = None
 
-    multi_call(breakout, 'double', init_data, make_sparse=False)
+    one_call(breakout, 'regular', init_data, make_sparse=False)

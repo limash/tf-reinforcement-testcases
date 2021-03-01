@@ -4,6 +4,23 @@ import matplotlib.pyplot as plt
 import ray
 
 
+# by Taaam, https://stackoverflow.com/questions/38492608/tensorflow-indexing-into-2d-tensor-with-1d-tensor
+def vector_slice(A, B):
+    """ Returns values of rows i of A at column B[i]
+
+    where A is a 2D Tensor with shape [None, D] 
+    and B is a 1D Tensor with shape [None] 
+    with type int32 elements in [0,D)
+
+    Example:
+      A =[[1,2], B = [0,1], vector_slice(A,B) -> [1,4]
+          [3,4]]
+    """
+    linear_index = (tf.shape(A)[1] * tf.range(0, tf.shape(A)[0]))
+    linear_A = tf.reshape(A, [-1])
+    return tf.gather(linear_A, B + linear_index)
+
+
 # def project_distribution is from (https://github.com/google/dopamine):
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
