@@ -22,7 +22,7 @@ class Agent(abc.ABC):
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
                  n_steps, init_epsilon,
-                 data=None, make_sparse=False
+                 data=None, make_sparse=False, make_checkpoint=False,
                  ):
         # environments; their hyperparameters
         self._env_name = env_name
@@ -46,6 +46,7 @@ class Agent(abc.ABC):
         self._data = data
         self._is_sparse = make_sparse
         assert not (not data and make_sparse), "Making a sparse model needs data of weights and mask"
+        self._make_checkpoint = make_checkpoint
 
         # networks
         self._model = None
@@ -183,12 +184,13 @@ class Agent(abc.ABC):
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
-            decay_steps=60000,
+            decay_steps=100000,
             end_learning_rate=0.1)  # final ε
 
         weights = None
         mask = None
-        mean_episode_reward = 0
+        rewards = 0
+        eval_counter = 0
 
         for step_counter in range(1, iterations_number + 1):
             # collecting
@@ -211,6 +213,7 @@ class Agent(abc.ABC):
             #       f"Items sampled:{self._items_sampled}; Items created:{items_created}", end="")
 
             if step_counter % eval_interval == 0:
+                eval_counter += 1
                 # print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
                 print(f"Iteration:{step_counter:.2f}; "
@@ -218,6 +221,7 @@ class Agent(abc.ABC):
                       f"Items created:{items_created:.2f}; "
                       f"Reward: {mean_episode_reward:.2f}; "
                       f"Epsilon: {self._epsilon:.2f}")
+                rewards += mean_episode_reward
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
@@ -231,12 +235,22 @@ class Agent(abc.ABC):
                 # print(f"Final epsilon is {self._epsilon}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
+                mean_total_reward = rewards / eval_counter
                 if self._is_sparse:
                     weights = self._data['weights']
                     mask = self._data['mask']
-                    mean_episode_reward = self._data['reward']
+                    mean_total_reward = self._data['reward']
                 else:
                     weights = self._model.get_weights()
                     mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
 
-        return weights, mask, mean_episode_reward
+                if self._make_checkpoint:
+                    try:
+                        checkpoint = self._replay_memory_client.checkpoint()
+                    except RuntimeError as err:
+                        print(err)
+                        checkpoint = err
+                else:
+                    checkpoint = None
+
+        return weights, mask, mean_total_reward, checkpoint

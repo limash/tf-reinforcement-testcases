@@ -34,7 +34,8 @@ def initialize_dataset(server_port, table_name,
 class UniformBuffer:
     def __init__(self,
                  min_size: int = 64,
-                 max_size: int = 100000):
+                 max_size: int = 100000,
+                 checkpointer=None):
         self._min_size = min_size
         self._table_name = 'uniform_table'
         self._server = reverb.Server(
@@ -52,7 +53,9 @@ class UniformBuffer:
                 ),
             ],
             # Sets the port to None to make the server pick one automatically.
-            port=None)
+            port=None,
+            checkpointer=checkpointer
+        )
 
     @property
     def table_name(self) -> str:
