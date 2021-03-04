@@ -31,7 +31,7 @@ BATCH_SIZE = 64
 BUFFER_SIZE = 200000
 N_STEPS = 2  # 2 steps is a regular TD(0)
 
-INIT_SAMPLE_EPS = .1  # 1 means random sampling, for sampling before training
+INIT_SAMPLE_EPS = 1.  # 1 means random sampling, for sampling before training
 INIT_N_SAMPLES = 0
 
 EPS = .1  # start for polynomial decay eps schedule, it should be real (double)
@@ -79,12 +79,12 @@ def multi_call(env_name, agent_name, data, checkpoint, make_sparse, plot=False):
     agent_object = ray.remote(num_gpus=1 / parallel_calls)(agent_object)
     agents = []
     for i in range(parallel_calls):
-        make_checkpoint = True if i == 0 else False
+        make_checkpoint = True if i == 0 else False  # make a checkpoint only in the first worker
         agents.append(agent_object.remote(env_name, INIT_N_SAMPLES,
                                           buffer.table_name, buffer.server_port, buffer.min_size,
                                           N_STEPS, INIT_SAMPLE_EPS,
                                           data, make_sparse, make_checkpoint))
-    futures = [agent.train_collect.remote(iterations_number=10000, epsilon=EPS) for agent in agents]
+    futures = [agent.train_collect.remote(iterations_number=20000, epsilon=EPS) for agent in agents]
     outputs = ray.get(futures)
 
     rewards = np.empty(parallel_calls)
@@ -98,6 +98,7 @@ def multi_call(env_name, agent_name, data, checkpoint, make_sparse, plot=False):
             misc.plot_2d_array(weights[0], "Zero_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
             misc.plot_2d_array(weights[2], "First_lvl_with_reward_" + str(reward) + "_proc_" + str(count))
     argmax = rewards.argmax()
+    print(f"Reward to save: {rewards[argmax]:.2f}")
     data = {
         'weights': weights_list[argmax],
         'mask': mask_list[argmax],
@@ -129,4 +130,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_checkpoint = None
 
-    multi_call(breakout, 'double', init_data, init_checkpoint, make_sparse=False)
+    multi_call(breakout, 'regular', init_data, init_checkpoint, make_sparse=False)

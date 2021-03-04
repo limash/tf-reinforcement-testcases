@@ -54,10 +54,11 @@ class Agent(abc.ABC):
 
         # fraction of random exp sampling
         self._epsilon = init_epsilon
+        self._repeat_limit = 100  # if there is more similar actions, reset environment
 
         # hyperparameters for optimization
         # self._optimizer = tf.keras.optimizers.Adam(lr=1e-3)
-        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
+        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001, clipnorm=1.0)
         # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
         #                                               epsilon=0.00001, centered=True)
         # self._loss_fn = tf.keras.losses.mean_squared_error
@@ -99,13 +100,24 @@ class Agent(abc.ABC):
         """
         obs = self._eval_env.reset()
         rewards = 0
-        # while True:
+
+        repeat_counter = 0
+        prev_action = -1
+
         for step in it.count(0):
-            # if epsilon=0, greedy is disabled
             action = self._epsilon_greedy_policy(obs, epsilon)
+
+            if action == prev_action:
+                repeat_counter += 1
+            else:
+                repeat_counter = 0
+            prev_action = action
+
             obs, reward, done, info = self._eval_env.step(action)
             rewards += reward
             if done:
+                break
+            if repeat_counter > self._repeat_limit:
                 break
         return rewards, step
 
@@ -131,11 +143,22 @@ class Agent(abc.ABC):
         start_itemizing = self._n_steps - 2
         with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
             obs = self._train_env.reset()
+
+            repeat_counter = 0
+            prev_action = -1
+
             action, reward, done = tf.constant(-1), tf.constant(0.), tf.constant(0.)
             obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=self.OBS_DTYPES[self._env_name]), obs)
             writer.append((action, obs, reward, done))
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
+
+                if action == prev_action:
+                    repeat_counter += 1
+                else:
+                    repeat_counter = 0
+                prev_action = action
+
                 obs, reward, done, info = self._train_env.step(action)
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
                 reward = tf.convert_to_tensor(reward, dtype=tf.float32)
@@ -147,6 +170,8 @@ class Agent(abc.ABC):
                 if step >= start_itemizing:
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
                 if done:
+                    break
+                if repeat_counter > self._repeat_limit:
                     break
 
     def _collect_several_episodes(self, epsilon, n_episodes):
@@ -184,7 +209,7 @@ class Agent(abc.ABC):
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
-            decay_steps=100000,
+            decay_steps=iterations_number,
             end_learning_rate=0.1)  # final ε
 
         weights = None
