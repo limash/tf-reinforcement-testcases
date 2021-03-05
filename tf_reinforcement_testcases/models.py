@@ -84,6 +84,7 @@ def get_conv_channels_first(input_shape, n_outputs):
 
 def get_mlp(input_shape, n_outputs):
     from tensorflow import keras
+    import tensorflow as tf
     import tensorflow.keras.layers as layers
 
     inputs = layers.Input(shape=input_shape)
@@ -93,22 +94,39 @@ def get_mlp(input_shape, n_outputs):
     # x = layers.Dense(500, kernel_initializer="he_normal")(x)
     # x = layers.LeakyReLU(alpha=0.2)(x)
 
-    x = layers.Dense(100, kernel_initializer="he_normal",
-                     kernel_regularizer=keras.regularizers.l2(0.01),
-                     use_bias=False)(inputs)
-    x = layers.BatchNormalization()(x)
-    x = layers.ELU()(x)
+    x = tf.keras.layers.Dense(100,
+                              activation=tf.keras.activations.relu,
+                              kernel_initializer=tf.keras.initializers.VarianceScaling(
+                                  scale=2.0, mode='fan_in', distribution='truncated_normal')
+                              )(inputs)
+    x = tf.keras.layers.Dense(50,
+                              activation=tf.keras.activations.relu,
+                              kernel_initializer=tf.keras.initializers.VarianceScaling(
+                                  scale=2.0, mode='fan_in', distribution='truncated_normal')
+                              )(x)
 
-    x = layers.Dense(50, kernel_initializer="he_normal",
-                     kernel_regularizer=keras.regularizers.l2(0.01),
-                     use_bias=False)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.ELU()(x)
+    # x = layers.Dense(500, kernel_initializer="he_normal",
+    #                  kernel_regularizer=keras.regularizers.l2(0.01),
+    #                  use_bias=False)(inputs)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
+
+    # x = layers.Dense(500, kernel_initializer="he_normal",
+    #                  kernel_regularizer=keras.regularizers.l2(0.01),
+    #                  use_bias=False)(x)
+    # x = layers.BatchNormalization()(x)
+    # x = layers.ELU()(x)
 
     # x = layers.Dense(50, activation="relu")(inputs)
     # x = layers.Dense(10, activation="relu")(x)
 
-    outputs = layers.Dense(n_outputs)(x)
+    outputs = tf.keras.layers.Dense(n_outputs,
+                                    activation=None,
+                                    kernel_initializer=tf.keras.initializers.RandomUniform(minval=-0.03, maxval=0.03),
+                                    bias_initializer=tf.keras.initializers.Constant(-0.2)
+                                    )(x)
+
+    # outputs = layers.Dense(n_outputs)(x)
     model = keras.Model(inputs=[inputs], outputs=[outputs])
     return model
 

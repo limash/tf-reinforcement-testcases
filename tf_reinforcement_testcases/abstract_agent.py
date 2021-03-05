@@ -4,6 +4,7 @@ import itertools as it
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.utils import losses_utils
 import gym
 import gym.wrappers as gw
 import reverb
@@ -32,12 +33,12 @@ class Agent(abc.ABC):
             self._train_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._train_env),  # includes frameskip 4
-                    max_episode_steps=10000),
+                    max_episode_steps=1000),
                 4)
             self._eval_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._eval_env),
-                    max_episode_steps=10000),
+                    max_episode_steps=1000),
                 4)
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
@@ -57,12 +58,14 @@ class Agent(abc.ABC):
         self._repeat_limit = 100  # if there is more similar actions, reset environment
 
         # hyperparameters for optimization
-        # self._optimizer = tf.keras.optimizers.Adam(lr=1e-3)
-        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
+        self._optimizer = tf.keras.optimizers.Adam(lr=2.5e-4)
+        # self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
         # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
         #                                               epsilon=0.00001, centered=True)
         # self._loss_fn = tf.keras.losses.mean_squared_error
-        self._loss_fn = tf.keras.losses.Huber()
+        self._loss_fn = tf.keras.losses.MeanSquaredError(reduction=losses_utils.ReductionV2.NONE)
+        # self._loss_fn = tf.keras.losses.Huber(reduction=losses_utils.ReductionV2.NONE)
+        # self._loss_fn = tf.keras.losses.Huber()
 
         # buffer; hyperparameters for a reward calculation
         self._table_name = buffer_table_name
@@ -79,7 +82,7 @@ class Agent(abc.ABC):
                                                    self._input_shape, self.OBS_DTYPES[env_name],
                                                    self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
-        self._discount_rate = tf.constant(0.99, dtype=tf.float32)
+        self._discount_rate = tf.constant(1., dtype=tf.float32)
         self._items_sampled = 0
 
     @tf.function
@@ -153,11 +156,11 @@ class Agent(abc.ABC):
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
 
-                # if action == prev_action:
-                #     repeat_counter += 1
-                # else:
-                #     repeat_counter = 0
-                # prev_action = action
+                if action == prev_action:
+                    repeat_counter += 1
+                else:
+                    repeat_counter = 0
+                prev_action = action
 
                 obs, reward, done, info = self._train_env.step(action)
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
@@ -171,8 +174,8 @@ class Agent(abc.ABC):
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
                 if done:
                     break
-                # if repeat_counter > self._repeat_limit:
-                #     break
+                if repeat_counter > self._repeat_limit:
+                    break
 
     def _collect_several_episodes(self, epsilon, n_episodes):
         for i in range(n_episodes):
@@ -204,13 +207,13 @@ class Agent(abc.ABC):
 
     def train_collect(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 100
+        eval_interval = 2000
         target_model_update_interval = 2000
-        self._epsilon = epsilon
-        # epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
-        #     initial_learning_rate=epsilon,  # initial ε
-        #     decay_steps=iterations_number,
-        #     end_learning_rate=0.1)  # final ε
+        # self._epsilon = epsilon
+        epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=epsilon,  # initial ε
+            decay_steps=iterations_number,
+            end_learning_rate=0.1)  # final ε
 
         weights = None
         mask = None
@@ -221,9 +224,9 @@ class Agent(abc.ABC):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
-            # train 10 times more than collecting new experience
-            if items_created * 10 < self._items_sampled:
-                # self._epsilon = epsilon_fn(step_counter)
+            # train * X times more than collecting new experience
+            if items_created * 20 < self._items_sampled:
+                self._epsilon = epsilon_fn(step_counter)
                 self._collect_trajectories_from_episode(self._epsilon)
 
             # dm-reverb returns tensors
@@ -247,6 +250,12 @@ class Agent(abc.ABC):
                       f"Reward: {mean_episode_reward:.2f}; "
                       f"Epsilon: {self._epsilon:.2f}")
                 rewards += mean_episode_reward
+                # if mean_episode_reward == 500:
+                #     weights = self._model.get_weights()
+                #     mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
+                #     checkpoint = None
+                #     output_reward = mean_episode_reward
+                #     break
 
             # update target model weights
             if self._target_model and step_counter % target_model_update_interval == 0:
@@ -255,16 +264,16 @@ class Agent(abc.ABC):
 
             # store weights at the last step
             if step_counter % iterations_number == 0:
-                # mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
-                # print(f"Final reward with a model policy is {mean_episode_reward}")
+                mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
+                print(f"Final reward with a model policy is {mean_episode_reward}")
                 # print(f"Final epsilon is {self._epsilon}")
                 # do not update data in case of sparse net
                 # currently the only way to make a sparse net is from a dense net weights and mask
-                mean_total_reward = rewards / eval_counter
+                output_reward = rewards / eval_counter
                 if self._is_sparse:
                     weights = self._data['weights']
                     mask = self._data['mask']
-                    mean_total_reward = self._data['reward']
+                    output_reward = self._data['reward']
                 else:
                     weights = self._model.get_weights()
                     mask = list(map(lambda x: np.where(np.abs(x) < 0.1, 0., 1.), weights))
@@ -278,4 +287,4 @@ class Agent(abc.ABC):
                 else:
                     checkpoint = None
 
-        return weights, mask, mean_total_reward, checkpoint
+        return weights, mask, output_reward, checkpoint

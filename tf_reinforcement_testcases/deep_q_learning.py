@@ -35,6 +35,9 @@ class RegularDQNAgent(Agent):
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
+        reward = self._evaluate_episodes_greedy(num_episodes=10)
+        print(f"Initial reward with a model policy is {reward}")
+
     @tf.function
     def _training_step(self, actions, observations, rewards, dones, info):
 
@@ -42,11 +45,11 @@ class RegularDQNAgent(Agent):
             self._prepare_td_arguments(actions, observations, rewards, dones)
 
         next_Q_values = self._model(last_observations)
-        max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+        # max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
 
-        # idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
-        # random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
-        # max_next_Q_values = random_next_Q_values
+        idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
+        random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
+        max_next_Q_values = random_next_Q_values
 
         target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)
