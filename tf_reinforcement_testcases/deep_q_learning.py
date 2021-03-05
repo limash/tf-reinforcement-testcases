@@ -42,11 +42,11 @@ class RegularDQNAgent(Agent):
             self._prepare_td_arguments(actions, observations, rewards, dones)
 
         next_Q_values = self._model(last_observations)
-        # max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+        max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
 
-        idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
-        random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
-        max_next_Q_values = random_next_Q_values
+        # idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
+        # random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
+        # max_next_Q_values = random_next_Q_values
 
         target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)
@@ -153,7 +153,7 @@ class DoubleDuelingDQNAgent(DoubleDQNAgent):
 
 class CategoricalDQNAgent(Agent):
 
-    def __init__(self, env_name, *args, **kwargs):
+    def __init__(self, env_name, init_n_samples, *args, **kwargs):
         super().__init__(env_name, *args, **kwargs)
 
         min_q_value = 0
@@ -167,13 +167,13 @@ class CategoricalDQNAgent(Agent):
             self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             # self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
-            self._collect_until_items_created(epsilon=1, n_items=self._sample_batch_size)
+            self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
         # continue a model training
         elif self._data and not self._is_sparse:
             self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
-            self._collect_several_episodes(epsilon=self._epsilon, n_episodes=self._sample_batch_size)
+            self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
         # make and train a sparse model from a dense model
         elif self._data and self._is_sparse:
             weights = self._data['weights']
@@ -182,8 +182,8 @@ class CategoricalDQNAgent(Agent):
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
-        reward = self._evaluate_episodes_greedy(num_episodes=100)
-        print(f"Initial reward with a model policy is {reward}")
+        # reward = self._evaluate_episodes_greedy(num_episodes=100)
+        # print(f"Initial reward with a model policy is {reward}")
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:

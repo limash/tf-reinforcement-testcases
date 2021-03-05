@@ -93,13 +93,13 @@ def get_mlp(input_shape, n_outputs):
     # x = layers.Dense(500, kernel_initializer="he_normal")(x)
     # x = layers.LeakyReLU(alpha=0.2)(x)
 
-    x = layers.Dense(500, kernel_initializer="he_normal",
+    x = layers.Dense(100, kernel_initializer="he_normal",
                      kernel_regularizer=keras.regularizers.l2(0.01),
                      use_bias=False)(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.ELU()(x)
 
-    x = layers.Dense(500, kernel_initializer="he_normal",
+    x = layers.Dense(50, kernel_initializer="he_normal",
                      kernel_regularizer=keras.regularizers.l2(0.01),
                      use_bias=False)(x)
     x = layers.BatchNormalization()(x)

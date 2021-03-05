@@ -32,12 +32,12 @@ class Agent(abc.ABC):
             self._train_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._train_env),  # includes frameskip 4
-                    max_episode_steps=1000),
+                    max_episode_steps=10000),
                 4)
             self._eval_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._eval_env),
-                    max_episode_steps=1000),
+                    max_episode_steps=10000),
                 4)
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
@@ -58,7 +58,7 @@ class Agent(abc.ABC):
 
         # hyperparameters for optimization
         # self._optimizer = tf.keras.optimizers.Adam(lr=1e-3)
-        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001, clipnorm=1.0)
+        self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
         # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
         #                                               epsilon=0.00001, centered=True)
         # self._loss_fn = tf.keras.losses.mean_squared_error
@@ -153,11 +153,11 @@ class Agent(abc.ABC):
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
 
-                if action == prev_action:
-                    repeat_counter += 1
-                else:
-                    repeat_counter = 0
-                prev_action = action
+                # if action == prev_action:
+                #     repeat_counter += 1
+                # else:
+                #     repeat_counter = 0
+                # prev_action = action
 
                 obs, reward, done, info = self._train_env.step(action)
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
@@ -171,8 +171,8 @@ class Agent(abc.ABC):
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
                 if done:
                     break
-                if repeat_counter > self._repeat_limit:
-                    break
+                # if repeat_counter > self._repeat_limit:
+                #     break
 
     def _collect_several_episodes(self, epsilon, n_episodes):
         for i in range(n_episodes):
@@ -204,13 +204,13 @@ class Agent(abc.ABC):
 
     def train_collect(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 2000
+        eval_interval = 100
         target_model_update_interval = 2000
-        # self._epsilon = epsilon
-        epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
-            initial_learning_rate=epsilon,  # initial ε
-            decay_steps=iterations_number,
-            end_learning_rate=0.1)  # final ε
+        self._epsilon = epsilon
+        # epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
+        #     initial_learning_rate=epsilon,  # initial ε
+        #     decay_steps=iterations_number,
+        #     end_learning_rate=0.1)  # final ε
 
         weights = None
         mask = None
@@ -223,7 +223,7 @@ class Agent(abc.ABC):
             # do not collect new experience if we have not used previous
             # train 10 times more than collecting new experience
             if items_created * 10 < self._items_sampled:
-                self._epsilon = epsilon_fn(step_counter)
+                # self._epsilon = epsilon_fn(step_counter)
                 self._collect_trajectories_from_episode(self._epsilon)
 
             # dm-reverb returns tensors
