@@ -28,13 +28,13 @@ BUFFERS = {"regular": storage.UniformBuffer,
            "actor_critic": storage.UniformBuffer}
 
 BATCH_SIZE = 64
-BUFFER_SIZE = 200000
+BUFFER_SIZE = 500000
 N_STEPS = 2  # 2 steps is a regular TD(0)
 
 INIT_SAMPLE_EPS = 1.  # 1 means random sampling, for sampling before training
 INIT_N_SAMPLES = 0
 
-EPS = .1  # start for polynomial decay eps schedule, it should be real (double)
+EPS = .09  # start for polynomial decay eps schedule, it should be real (double)
 
 
 def one_call(env_name, agent_name, data, checkpoint, make_sparse):
@@ -50,7 +50,7 @@ def one_call(env_name, agent_name, data, checkpoint, make_sparse):
                          buffer.table_name, buffer.server_port, buffer.min_size,
                          N_STEPS, INIT_SAMPLE_EPS,
                          data, make_sparse, make_checkpoint=True)
-    weights, mask, reward, checkpoint = agent.train_collect(iterations_number=20000, epsilon=EPS)
+    weights, mask, reward, checkpoint = agent.train_collect(iterations_number=100000, epsilon=EPS)
 
     data = {
         'weights': weights,
@@ -84,7 +84,7 @@ def multi_call(env_name, agent_name, data, checkpoint, make_sparse, plot=False):
                                           buffer.table_name, buffer.server_port, buffer.min_size,
                                           N_STEPS, INIT_SAMPLE_EPS,
                                           data, make_sparse, make_checkpoint))
-    futures = [agent.train_collect.remote(iterations_number=2000, epsilon=EPS) for agent in agents]
+    futures = [agent.train_collect.remote(iterations_number=320000, epsilon=EPS) for agent in agents]
     outputs = ray.get(futures)
 
     rewards = np.empty(parallel_calls)
@@ -130,4 +130,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_checkpoint = None
 
-    multi_call(breakout, 'regular', init_data, init_checkpoint, make_sparse=False)
+    multi_call(breakout, 'double', init_data, init_checkpoint, make_sparse=False)

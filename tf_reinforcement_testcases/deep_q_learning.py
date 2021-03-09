@@ -160,8 +160,8 @@ class CategoricalDQNAgent(Agent):
         super().__init__(env_name, *args, **kwargs)
 
         min_q_value = 0
-        max_q_value = 51
-        self._n_atoms = 51
+        max_q_value = 100
+        self._n_atoms = 100
         self._support = tf.linspace(min_q_value, max_q_value, self._n_atoms)
         self._support = tf.cast(self._support, tf.float32)
         cat_n_outputs = self._n_outputs * self._n_atoms
@@ -185,8 +185,8 @@ class CategoricalDQNAgent(Agent):
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
 
-        # reward = self._evaluate_episodes_greedy(num_episodes=100)
-        # print(f"Initial reward with a model policy is {reward}")
+        reward = self._evaluate_episodes_greedy(num_episodes=10)
+        print(f"Initial reward with a model policy is {reward}")
 
     def _epsilon_greedy_policy(self, obs, epsilon):
         if np.random.rand() < epsilon:

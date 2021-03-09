@@ -4,7 +4,7 @@ import itertools as it
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.keras.utils import losses_utils
+# from tensorflow.python.keras.utils import losses_utils
 import gym
 import gym.wrappers as gw
 import reverb
@@ -33,13 +33,16 @@ class Agent(abc.ABC):
             self._train_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._train_env),  # includes frameskip 4
-                    max_episode_steps=1000),
+                    max_episode_steps=10000),
                 4)
             self._eval_env = gw.FrameStack(
                 gw.TimeLimit(
                     gw.AtariPreprocessing(self._eval_env),
-                    max_episode_steps=1000),
+                    max_episode_steps=10000),
                 4)
+            self._collect_trajectories_from_episode = self._collect_trajectories_from_episode_atari
+        else:
+            self._collect_trajectories_from_episode = self._collect_trajectories_from_episode_regular
         self._n_outputs = self._train_env.action_space.n  # number of actions
         self._input_shape = self._train_env.observation_space.shape
 
@@ -58,14 +61,14 @@ class Agent(abc.ABC):
         self._repeat_limit = 100  # if there is more similar actions, reset environment
 
         # hyperparameters for optimization
-        self._optimizer = tf.keras.optimizers.Adam(lr=2.5e-4)
+        self._optimizer = tf.keras.optimizers.Adam(lr=1.e-5)
         # self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
         # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
         #                                               epsilon=0.00001, centered=True)
         # self._loss_fn = tf.keras.losses.mean_squared_error
-        self._loss_fn = tf.keras.losses.MeanSquaredError(reduction=losses_utils.ReductionV2.NONE)
+        # self._loss_fn = tf.keras.losses.MeanSquaredError(reduction=losses_utils.ReductionV2.NONE)
         # self._loss_fn = tf.keras.losses.Huber(reduction=losses_utils.ReductionV2.NONE)
-        # self._loss_fn = tf.keras.losses.Huber()
+        self._loss_fn = tf.keras.losses.Huber()
 
         # buffer; hyperparameters for a reward calculation
         self._table_name = buffer_table_name
@@ -82,7 +85,7 @@ class Agent(abc.ABC):
                                                    self._input_shape, self.OBS_DTYPES[env_name],
                                                    self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
-        self._discount_rate = tf.constant(1., dtype=tf.float32)
+        self._discount_rate = tf.constant(0.99, dtype=tf.float32)
         self._items_sampled = 0
 
     @tf.function
@@ -134,7 +137,7 @@ class Agent(abc.ABC):
             episode_rewards += rewards
         return episode_rewards / num_episodes
 
-    def _collect_trajectories_from_episode(self, epsilon):
+    def _collect_trajectories_from_episode_regular(self, epsilon):
         """
         Collects trajectories (items) to a buffer.
         A buffer contains items, each item consists of n_steps 'time steps';
@@ -147,20 +150,11 @@ class Agent(abc.ABC):
         with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
             obs = self._train_env.reset()
 
-            repeat_counter = 0
-            prev_action = -1
-
             action, reward, done = tf.constant(-1), tf.constant(0.), tf.constant(0.)
             obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x, dtype=self.OBS_DTYPES[self._env_name]), obs)
             writer.append((action, obs, reward, done))
             for step in it.count(0):
                 action = self._epsilon_greedy_policy(obs, epsilon)
-
-                if action == prev_action:
-                    repeat_counter += 1
-                else:
-                    repeat_counter = 0
-                prev_action = action
 
                 obs, reward, done, info = self._train_env.step(action)
                 action = tf.convert_to_tensor(action, dtype=tf.int32)
@@ -174,8 +168,71 @@ class Agent(abc.ABC):
                     writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
                 if done:
                     break
-                if repeat_counter > self._repeat_limit:
-                    break
+
+    def _collect_trajectories_from_episode_atari(self, epsilon):
+        """
+        Collects trajectories (items) to a buffer.
+        A buffer contains items, each item consists of n_steps 'time steps';
+        for a regular TD(0) update an item should have 2 time steps.
+        One 'time step' contains (action, obs, reward, done);
+        action, reward, done are for the current observation (or obs);
+        e.g. action led to the obs, reward prior the obs, if is it done at the current obs.
+        """
+        lives = 5
+        initial_step = True
+        repeat_counter = 0
+        prev_action = -1
+        done = False
+
+        obs = self._train_env.reset()
+        # save sequences of n_steps length
+        start_itemizing = self._n_steps - 2
+        while lives:
+            with self._replay_memory_client.writer(max_sequence_length=self._n_steps) as writer:
+                if done:
+                    # if life was lost, save again the previous step with 'done'
+                    pass
+                else:
+                    # the very first observation (just before reset)
+                    action, reward, done = tf.constant(prev_action), tf.constant(0.), tf.constant(0.)
+                    obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x,
+                                                                               dtype=self.OBS_DTYPES[self._env_name]),
+                                                obs)
+                writer.append((action, obs, reward, done))
+                for step in it.count(0):
+                    if initial_step or done:
+                        action = 1  # fire, it can probably speed up training
+                        initial_step = False
+                    else:
+                        action = self._epsilon_greedy_policy(obs, epsilon)
+
+                    # to prevent huge sequences of similar actions
+                    if action == prev_action:
+                        repeat_counter += 1
+                    else:
+                        repeat_counter = 0
+                    prev_action = action
+
+                    obs, reward, done, info = self._train_env.step(action)
+                    if info['ale.lives'] < lives:
+                        # if life is lost, save done True to the replay buffer
+                        done = True
+                        lives = info['ale.lives']
+
+                    action = tf.convert_to_tensor(action, dtype=tf.int32)
+                    reward = tf.convert_to_tensor(reward, dtype=tf.float32)
+                    done = tf.convert_to_tensor(done, dtype=tf.float32)
+                    obs = tf.nest.map_structure(lambda x: tf.convert_to_tensor(x,
+                                                                               dtype=self.OBS_DTYPES[self._env_name]),
+                                                obs)
+                    writer.append((action, obs, reward, done))
+                    if step >= start_itemizing:
+                        writer.create_item(table=self._table_name, num_timesteps=self._n_steps, priority=1.)
+                    if done:
+                        break
+                    if repeat_counter > self._repeat_limit:
+                        done = True  # to fire on the next step
+                        break
 
     def _collect_several_episodes(self, epsilon, n_episodes):
         for i in range(n_episodes):
@@ -207,13 +264,13 @@ class Agent(abc.ABC):
 
     def train_collect(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 2000
-        target_model_update_interval = 2000
+        eval_interval = 10000
+        target_model_update_interval = 3000
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
             decay_steps=iterations_number,
-            end_learning_rate=0.1)  # final ε
+            end_learning_rate=0.08)  # final ε
 
         weights = None
         mask = None
