@@ -61,7 +61,8 @@ class Agent(abc.ABC):
         self._repeat_limit = 100  # if there is more similar actions, reset environment
 
         # hyperparameters for optimization
-        self._optimizer = tf.keras.optimizers.Adam(lr=1.e-5)
+        # self._optimizer = tf.keras.optimizers.Adam(lr=1.e-5)
+        self._optimizer = tf.keras.optimizers.Adam(lr=1.e-4)
         # self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
         # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
         #                                               epsilon=0.00001, centered=True)
@@ -264,13 +265,13 @@ class Agent(abc.ABC):
 
     def train_collect(self, iterations_number=10000, epsilon=0.1):
 
-        eval_interval = 10000
+        eval_interval = 2000
         target_model_update_interval = 3000
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=epsilon,  # initial ε
             decay_steps=iterations_number,
-            end_learning_rate=0.08)  # final ε
+            end_learning_rate=0.1)  # final ε
 
         weights = None
         mask = None

@@ -87,6 +87,15 @@ class FixedQValuesDQNAgent(RegularDQNAgent):
 
         next_Q_values = self._target_model(last_observations)  # the only difference comparing to the vanilla dqn
         max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+
+        # idx_random = tf.random.uniform(shape=[], maxval=4, dtype=tf.int32)
+        # if idx_random == 1:
+        #     idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
+        #     random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
+        #     max_next_Q_values = random_next_Q_values
+        # else:
+        #     max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+
         target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)
         mask = tf.one_hot(second_actions, self._n_outputs, dtype=tf.float32)
@@ -167,13 +176,13 @@ class CategoricalDQNAgent(Agent):
         cat_n_outputs = self._n_outputs * self._n_atoms
         # train a model from scratch
         if self._data is None:
-            self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
+            self._model = self.NETWORKS[env_name](self._input_shape, cat_n_outputs)
             # collect some data with a random policy (epsilon 1 corresponds to it) before training
             # self._collect_several_episodes(epsilon=1, n_episodes=self._sample_batch_size)
             self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
         # continue a model training
         elif self._data and not self._is_sparse:
-            self._model = self.NETWORKS(self._input_shape, cat_n_outputs)
+            self._model = self.NETWORKS[env_name](self._input_shape, cat_n_outputs)
             self._model.set_weights(self._data['weights'])
             # collect date with epsilon greedy policy
             self._collect_until_items_created(epsilon=self._epsilon, n_items=init_n_samples)
