@@ -45,11 +45,11 @@ class RegularDQNAgent(Agent):
             self._prepare_td_arguments(actions, observations, rewards, dones)
 
         next_Q_values = self._model(last_observations)
-        # max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
+        max_next_Q_values = tf.reduce_max(next_Q_values, axis=1)
 
-        idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
-        random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
-        max_next_Q_values = random_next_Q_values
+        # idx_random = tf.random.uniform(shape=[self._sample_batch_size], maxval=4, dtype=tf.int32)
+        # random_next_Q_values = misc.vector_slice(next_Q_values, idx_random)
+        # max_next_Q_values = random_next_Q_values
 
         target_Q_values = total_rewards + (tf.constant(1.0) - last_dones) * last_discounted_gamma * max_next_Q_values
         target_Q_values = tf.expand_dims(target_Q_values, -1)

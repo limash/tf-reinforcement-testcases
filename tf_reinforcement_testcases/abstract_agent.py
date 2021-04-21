@@ -22,7 +22,7 @@ class Agent(abc.ABC):
 
     def __init__(self, env_name,
                  buffer_table_name, buffer_server_port, buffer_min_size,
-                 n_steps, init_epsilon,
+                 config,
                  data=None, make_sparse=False, make_checkpoint=False,
                  ):
         # environments; their hyperparameters
@@ -57,19 +57,12 @@ class Agent(abc.ABC):
         self._target_model = None
 
         # fraction of random exp sampling
-        self._epsilon = init_epsilon
+        self._epsilon = config["init_sample_epsilon"]
         self._repeat_limit = 100  # if there is more similar actions, reset environment
 
         # hyperparameters for optimization
-        # self._optimizer = tf.keras.optimizers.Adam(lr=1.e-5)
-        self._optimizer = tf.keras.optimizers.Adam(lr=1.e-4)
-        # self._optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, clipnorm=1.0)
-        # self._optimizer = tf.keras.optimizers.RMSprop(lr=2.5e-4, rho=0.95, momentum=0.0,
-        #                                               epsilon=0.00001, centered=True)
-        # self._loss_fn = tf.keras.losses.mean_squared_error
-        # self._loss_fn = tf.keras.losses.MeanSquaredError(reduction=losses_utils.ReductionV2.NONE)
-        # self._loss_fn = tf.keras.losses.Huber(reduction=losses_utils.ReductionV2.NONE)
-        self._loss_fn = tf.keras.losses.Huber()
+        self._optimizer = config["optimizer"]
+        self._loss_fn = config["loss"]
 
         # buffer; hyperparameters for a reward calculation
         self._table_name = buffer_table_name
@@ -79,15 +72,19 @@ class Agent(abc.ABC):
         self._sample_batch_size = buffer_min_size
         # N_steps - amount of steps stored per item, it should be at least 2;
         # for details see function _collect_trajectories_from_episode()
-        self._n_steps = n_steps
+        self._n_steps = config["n_steps"]
         # initialize a dataset to be used to sample data from a server
-        # todo: it takes a lot of memory, so it can be useful to separate samplers from trainers in some cases
         self._dataset = storage.initialize_dataset(buffer_server_port, buffer_table_name,
                                                    self._input_shape, self.OBS_DTYPES[env_name],
                                                    self._sample_batch_size, self._n_steps)
         self._iterator = iter(self._dataset)
-        self._discount_rate = tf.constant(0.99, dtype=tf.float32)
+        self._discount_rate = config["discount_rate"]
         self._items_sampled = 0
+
+        self._iterations_number = config["iterations_number"]
+        self._eval_interval = config["eval_interval"]
+        self._start_epsilon = config["start_epsilon"]
+        self._final_epsilon = config["final_epsilon"]
 
     @tf.function
     def _predict(self, observation):
@@ -263,22 +260,21 @@ class Agent(abc.ABC):
     def _training_step(self, actions, observations, rewards, dones, info):
         raise NotImplementedError
 
-    def train_collect(self, iterations_number=10000, epsilon=0.1):
+    def train_collect(self):
 
-        eval_interval = 2000
         target_model_update_interval = 3000
         # self._epsilon = epsilon
         epsilon_fn = tf.keras.optimizers.schedules.PolynomialDecay(
-            initial_learning_rate=epsilon,  # initial ε
-            decay_steps=iterations_number,
-            end_learning_rate=0.1)  # final ε
+            initial_learning_rate=self._start_epsilon,  # initial ε
+            decay_steps=self._iterations_number,
+            end_learning_rate=self._final_epsilon)  # final ε
 
         weights = None
         mask = None
         rewards = 0
         eval_counter = 0
 
-        for step_counter in range(1, iterations_number + 1):
+        for step_counter in range(1, self._iterations_number + 1):
             # collecting
             items_created = self._replay_memory_client.server_info()[self._table_name][5].insert_stats.completed
             # do not collect new experience if we have not used previous
@@ -298,7 +294,7 @@ class Agent(abc.ABC):
             # print(f"\rTraining. Iteration:{step_counter}; "
             #       f"Items sampled:{self._items_sampled}; Items created:{items_created}", end="")
 
-            if step_counter % eval_interval == 0:
+            if step_counter % self._eval_interval == 0:
                 eval_counter += 1
                 # print("\r")
                 mean_episode_reward = self._evaluate_episodes_greedy()
@@ -321,7 +317,7 @@ class Agent(abc.ABC):
                 self._target_model.set_weights(weights)
 
             # store weights at the last step
-            if step_counter % iterations_number == 0:
+            if step_counter % self._iterations_number == 0:
                 mean_episode_reward = self._evaluate_episodes_greedy(num_episodes=10)
                 print(f"Final reward with a model policy is {mean_episode_reward}")
                 # print(f"Final epsilon is {self._epsilon}")

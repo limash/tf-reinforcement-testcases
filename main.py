@@ -9,7 +9,11 @@ import ray
 import reverb
 import numpy as np
 
-from tf_reinforcement_testcases import deep_q_learning, actor_critic, storage, misc
+from tf_reinforcement_testcases import deep_q_learning, policy_gradient, storage, misc
+
+from config import *
+
+config = CONF_DQN
 
 AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "fixed": deep_q_learning.FixedQValuesDQNAgent,
@@ -17,7 +21,7 @@ AGENTS = {"regular": deep_q_learning.RegularDQNAgent,
           "double_dueling": deep_q_learning.DoubleDuelingDQNAgent,
           "categorical": deep_q_learning.CategoricalDQNAgent,
           "priority_categorical": deep_q_learning.PriorityCategoricalDQNAgent,
-          "actor_critic": actor_critic.ACAgent}
+          "actor_critic": policy_gradient.ACAgent}
 
 BUFFERS = {"regular": storage.UniformBuffer,
            "fixed": storage.UniformBuffer,
@@ -27,14 +31,9 @@ BUFFERS = {"regular": storage.UniformBuffer,
            "priority_categorical": storage.PriorityBuffer,
            "actor_critic": storage.UniformBuffer}
 
-BATCH_SIZE = 64
-BUFFER_SIZE = 500000
-N_STEPS = 2  # 2 steps is a regular TD(0)
-
-INIT_SAMPLE_EPS = 1.  # 1 means random sampling, for sampling before training
-INIT_N_SAMPLES = 0
-
-EPS = .1  # start for polynomial decay eps schedule, it should be real (double)
+BATCH_SIZE = config["batch_size"]
+BUFFER_SIZE = config["buffer_size"]
+INIT_N_SAMPLES = config["init_n_samples"]
 
 
 def one_call(env_name, agent_name, data, checkpoint, make_sparse):
@@ -48,9 +47,9 @@ def one_call(env_name, agent_name, data, checkpoint, make_sparse):
     agent_object = AGENTS[agent_name]
     agent = agent_object(env_name, INIT_N_SAMPLES,
                          buffer.table_name, buffer.server_port, buffer.min_size,
-                         N_STEPS, INIT_SAMPLE_EPS,
+                         config,
                          data, make_sparse, make_checkpoint=True)
-    weights, mask, reward, checkpoint = agent.train_collect(iterations_number=100000, epsilon=EPS)
+    weights, mask, reward, checkpoint = agent.train_collect()
 
     data = {
         'weights': weights,
@@ -115,9 +114,9 @@ def multi_call(env_name, agent_name, data, checkpoint, make_sparse, plot=False):
 
 
 if __name__ == '__main__':
-    cart_pole = 'CartPole-v1'
-    goose = 'gym_goose:goose-v0'
-    breakout = 'BreakoutNoFrameskip-v4'
+    # cart_pole = 'CartPole-v1'
+    # goose = 'gym_goose:goose-v0'
+    # breakout = 'BreakoutNoFrameskip-v4'
 
     try:
         with open('data/data.pickle', 'rb') as file:
@@ -130,4 +129,4 @@ if __name__ == '__main__':
     except FileNotFoundError:
         init_checkpoint = None
 
-    multi_call(breakout, 'fixed', init_data, init_checkpoint, make_sparse=False)
+    one_call(config["environment"], config["agent"], init_data, init_checkpoint, make_sparse=False)
